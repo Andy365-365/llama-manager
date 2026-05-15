@@ -1,0 +1,110 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>实例管理 - Llama Manager</title>
+  <link rel="stylesheet" href="/static/css/style.css">
+</head>
+<body>
+  <div class="layout">
+    <aside class="sidebar">
+      <div class="logo">🦙 <span>Llama Manager</span></div>
+      <nav>
+        <a href="/dashboard"><span>📊 仪表盘</span></a>
+        <a href="/workspaces"><span>📁 空间管理</span></a>
+        <a href="/instances"><span>⚙️ 实例管理</span></a>
+        <a href="/gpu"><span>🖥️ GPU 监控</span></a>
+        <a href="/models"><span>📦 模型扫描</span></a>
+      </nav>
+    </aside>
+    <main class="main">
+      <div class="toolbar">
+        <h2 style="margin:0;">llama.cpp 实例管理</h2>
+        <div class="btn-group">
+          <button class="btn" onclick="autoDetect()">🔍 自动检测</button>
+          <button class="btn btn-primary" onclick="showModal()">+ 添加实例</button>
+        </div>
+      </div>
+      <div class="card">
+        <table>
+          <thead><tr><th>名称</th><th>安装路径</th><th>二进制</th><th>默认</th><th>配置数</th><th>状态</th><th>操作</th></tr></thead>
+          <tbody id="inst-table"><tr><td colspan="7" class="loading">加载中...</td></tr></tbody>
+        </table>
+      </div>
+      <div id="inst-modal" style="display:none" class="modal-overlay">
+        <div class="modal">
+          <div class="modal-header">
+            <span class="modal-title" id="inst-modal-title">添加实例</span>
+            <button class="modal-close" onclick="document.getElementById('inst-modal').style.display='none'">&times;</button>
+          </div>
+          <input type="hidden" id="inst-edit-id">
+          <div class="form-group"><label>名称</label><input type="text" id="inst-name" placeholder="例如: 标准版"></div>
+          <div class="form-group"><label>安装路径</label><input type="text" id="inst-path" placeholder="/llama.cpp"></div>
+          <div class="form-group"><label>描述</label><textarea id="inst-desc" placeholder="可选"></textarea></div>
+          <div style="text-align:right">
+            <button class="btn" onclick="document.getElementById('inst-modal').style.display='none'">取消</button>
+            <button class="btn btn-primary" onclick="saveInstance()" style="margin-left:8px">保存</button>
+          </div>
+        </div>
+      </div>
+    </main>
+  </div>
+  <script src="/static/js/app.js"></script>
+  <script>
+async function loadInstances() {
+  const data = await api('/api/instances/');
+  const tb = document.getElementById('inst-table');
+  if (!data.length) { tb.innerHTML = '<tr><td colspan="7" style="text-align:center;color:#999;">暂无实例</td></tr>'; return; }
+  tb.innerHTML = data.map(i => '<tr><td><b>' + i.name + '</b></td><td style="font-size:12px">' + i.install_path + '</td><td style="font-size:11px;max-width:200px;overflow:hidden;text-overflow:ellipsis" title="' + i.server_binary + '">' + i.server_binary + '</td><td>' + (i.is_default ? '<span class="badge badge-running">默认</span>' : '-') + '</td><td>' + i.config_count + '</td><td>' + (i.binary_exists ? '<span class="badge badge-running">存在</span>' : '<span class="badge badge-error">不存在</span>') + '</td><td><div class="btn-group"><button class="btn btn-sm" onclick="editInstance('+i.id+',\''+i.name.replace(/'/g,"\\\\'")+'\',\''+i.install_path.replace(/'/g,"\\\\'")+'\')">编辑</button>' + (i.is_default ? '' : '<button class="btn btn-sm" onclick="setDefault('+i.id+')">设为默认</button>') + '<button class="btn btn-sm btn-danger" onclick="deleteInstance('+i.id+',\''+i.name.replace(/'/g,"\\\\'")+'\')">删除</button></div></td></tr>').join('');
+}
+function showModal() {
+  document.getElementById('inst-modal-title').textContent = '添加实例';
+  document.getElementById('inst-edit-id').value = '';
+  document.getElementById('inst-name').value = '';
+  document.getElementById('inst-path').value = '';
+  document.getElementById('inst-desc').value = '';
+  document.getElementById('inst-modal').style.display = 'flex';
+}
+function editInstance(id, name, path) {
+  document.getElementById('inst-modal-title').textContent = '编辑实例';
+  document.getElementById('inst-edit-id').value = id;
+  document.getElementById('inst-name').value = name;
+  document.getElementById('inst-path').value = path;
+  document.getElementById('inst-modal').style.display = 'flex';
+}
+async function saveInstance() {
+  const id = document.getElementById('inst-edit-id').value;
+  const name = document.getElementById('inst-name').value.trim();
+  const path = document.getElementById('inst-path').value.trim();
+  const desc = document.getElementById('inst-desc').value.trim();
+  if (!name || !path) { toast('请填写名称和路径', 'warning'); return; }
+  const body = { name, install_path: path, description: desc };
+  const r = id ? await api('/api/instances/' + id, { method:'PUT', body: JSON.stringify(body) }) : await api('/api/instances/', { method:'POST', body: JSON.stringify(body) });
+  if (r.ok) { toast('保存成功', 'success'); document.getElementById('inst-modal').style.display = 'none'; loadInstances(); } else toast(r.error, 'error');
+}
+async function setDefault(id) {
+  const r = await api('/api/instances/' + id + '/set-default', { method:'POST' });
+  if (r.ok) { toast('已设为默认', 'success'); loadInstances(); } else toast(r.error, 'error');
+}
+async function deleteInstance(id, name) {
+  if (!await confirmDialog('确定删除实例 "' + name + '" 吗？')) return;
+  const r = await api('/api/instances/' + id, { method:'DELETE' });
+  if (r.ok) { toast('已删除', 'success'); loadInstances(); } else toast(r.error, 'error');
+}
+async function autoDetect() {
+  const r = await api('/api/instances/auto-detect', { method:'POST' });
+  if (r.length) {
+    toast('检测到 ' + r.length + ' 个实例: ' + r.map(x=>x.name).join(', '), 'success');
+    // Show auto-add option
+    if (await confirmDialog('是否自动添加检测到的实例？')) {
+      for (const inst of r) {
+        await api('/api/instances/', { method:'POST', body: JSON.stringify({ name: inst.name, install_path: inst.install_path }) });
+      }
+      loadInstances();
+    }
+  } else toast('未检测到 llama.cpp 实例', 'info');
+}
+loadInstances();
+  </script>
+</body>
+</html>

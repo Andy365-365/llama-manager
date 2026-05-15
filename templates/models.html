@@ -1,0 +1,48 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>模型扫描 - Llama Manager</title>
+  <link rel="stylesheet" href="/static/css/style.css">
+</head>
+<body>
+  <div class="layout">
+    <aside class="sidebar">
+      <div class="logo">🦙 <span>Llama Manager</span></div>
+      <nav>
+        <a href="/dashboard"><span>📊 仪表盘</span></a>
+        <a href="/workspaces"><span>📁 空间管理</span></a>
+        <a href="/instances"><span>⚙️ 实例管理</span></a>
+        <a href="/gpu"><span>🖥️ GPU 监控</span></a>
+        <a href="/models"><span>📦 模型扫描</span></a>
+      </nav>
+    </aside>
+    <main class="main">
+      <div class="toolbar">
+        <h2 style="margin:0;">模型扫描</h2>
+        <div class="btn-group">
+          <input type="text" id="scan-dir" placeholder="扫描目录(逗号分隔)" style="padding:6px 12px;border:1px solid #d9d9d9;border-radius:4px;" value="/data/models,~/models,~/.cache/llama-cpp/models">
+          <button class="btn btn-primary" onclick="scanModels()">🔍 扫描</button>
+        </div>
+      </div>
+      <div class="card">
+        <table>
+          <thead><tr><th>文件名</th><th>参数</th><th>量化</th><th>大小</th><th>路径</th></tr></thead>
+          <tbody id="model-table"><tr><td colspan="5" class="loading">输入目录并点击扫描</td></tr></tbody>
+        </table>
+      </div>
+    </main>
+  </div>
+  <script src="/static/js/app.js"></script>
+  <script>
+async function scanModels() {
+  const dirs = document.getElementById('scan-dir').value.trim();
+  const r = await api('/api/runtime/models/scan?directories=' + encodeURIComponent(dirs));
+  const tb = document.getElementById('model-table');
+  if (!r.length) { tb.innerHTML = '<tr><td colspan="5" style="text-align:center;color:#999;">未找到 .gguf 文件</td></tr>'; return; }
+  tb.innerHTML = r.map(m => '<tr><td><b>' + m.name + '</b></td><td>' + (m.metadata.params||'-') + '</td><td>' + (m.metadata.quant||'-') + '</td><td>' + m.size_human + '</td><td style="font-size:11px;max-width:300px;overflow:hidden;text-overflow:ellipsis" title="' + m.path + '">' + m.path + '</td></tr>').join('');
+  toast('扫描完成，共 ' + r.length + ' 个模型', 'success');
+}
+  </script>
+</body>
+</html>

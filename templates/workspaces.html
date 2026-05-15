@@ -1,0 +1,88 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>空间管理 - Llama Manager</title>
+  <link rel="stylesheet" href="/static/css/style.css">
+</head>
+<body>
+  <div class="layout">
+    <aside class="sidebar">
+      <div class="logo">🦙 <span>Llama Manager</span></div>
+      <nav>
+        <a href="/dashboard"><span>📊 仪表盘</span></a>
+        <a href="/workspaces"><span>📁 空间管理</span></a>
+        <a href="/instances"><span>⚙️ 实例管理</span></a>
+        <a href="/gpu"><span>🖥️ GPU 监控</span></a>
+        <a href="/models"><span>📦 模型扫描</span></a>
+      </nav>
+    </aside>
+    <main class="main">
+      <div class="toolbar">
+        <h2 style="margin:0;">空间管理</h2>
+        <button class="btn btn-primary" onclick="showCreateModal()">+ 新建空间</button>
+      </div>
+      <div class="card">
+        <table>
+          <thead><tr><th>名称</th><th>描述</th><th>配置数</th><th>创建时间</th><th>操作</th></tr></thead>
+          <tbody id="ws-table"><tr><td colspan="5" class="loading">加载中...</td></tr></tbody>
+        </table>
+      </div>
+      <div id="ws-modal" style="display:none" class="modal-overlay">
+        <div class="modal">
+          <div class="modal-header">
+            <span class="modal-title" id="ws-modal-title">新建空间</span>
+            <button class="modal-close" onclick="document.getElementById('ws-modal').style.display='none'">&times;</button>
+          </div>
+          <input type="hidden" id="ws-edit-id">
+          <div class="form-group"><label>名称</label><input type="text" id="ws-name" placeholder="例如: 推理服务"></div>
+          <div class="form-group"><label>描述</label><textarea id="ws-desc" placeholder="可选描述"></textarea></div>
+          <div style="text-align:right">
+            <button class="btn" onclick="document.getElementById('ws-modal').style.display='none'">取消</button>
+            <button class="btn btn-primary" onclick="saveWorkspace()" style="margin-left:8px">保存</button>
+          </div>
+        </div>
+      </div>
+    </main>
+  </div>
+  <script src="/static/js/app.js"></script>
+  <script>
+async function loadWorkspaces() {
+  const data = await api('/api/workspaces/');
+  const tb = document.getElementById('ws-table');
+  if (!data.length) { tb.innerHTML = '<tr><td colspan="5" style="text-align:center;color:#999;">暂无空间</td></tr>'; return; }
+  tb.innerHTML = data.map(w => '<tr><td><b>' + w.name + '</b></td><td>' + (w.description||'-') + '</td><td>' + w.config_count + '</td><td>' + new Date(w.created_at).toLocaleString() + '</td><td><div class="btn-group"><button class="btn btn-sm" onclick="editWorkspace(' + w.id + ',\'' + w.name.replace(/'/g,"\\'") + '\')">编辑</button><button class="btn btn-sm btn-danger" onclick="deleteWorkspace(' + w.id + ',\'' + w.name.replace(/'/g,"\\'") + '\')">删除</button></div></td></tr>').join('');
+}
+function showCreateModal() {
+  document.getElementById('ws-modal-title').textContent = '新建空间';
+  document.getElementById('ws-edit-id').value = '';
+  document.getElementById('ws-name').value = '';
+  document.getElementById('ws-desc').value = '';
+  document.getElementById('ws-modal').style.display = 'flex';
+}
+function editWorkspace(id, name) {
+  document.getElementById('ws-modal-title').textContent = '编辑空间';
+  document.getElementById('ws-edit-id').value = id;
+  document.getElementById('ws-name').value = name;
+  document.getElementById('ws-modal').style.display = 'flex';
+}
+async function saveWorkspace() {
+  const id = document.getElementById('ws-edit-id').value;
+  const name = document.getElementById('ws-name').value.trim();
+  const desc = document.getElementById('ws-desc').value.trim();
+  if (!name) { toast('请输入名称', 'warning'); return; }
+  const body = { name, description: desc };
+  const r = id ? await api('/api/workspaces/' + id, { method:'PUT', body: JSON.stringify(body) }) : await api('/api/workspaces/', { method:'POST', body: JSON.stringify(body) });
+  if (r.ok) { toast('保存成功', 'success'); document.getElementById('ws-modal').style.display = 'none'; loadWorkspaces(); }
+  else toast(r.error, 'error');
+}
+async function deleteWorkspace(id, name) {
+  if (!await confirmDialog('确定删除空间 "' + name + '" 吗？')) return;
+  const r = await api('/api/workspaces/' + id, { method:'DELETE' });
+  if (r.ok) { toast('已删除', 'success'); loadWorkspaces(); } else toast(r.error, 'error');
+}
+loadWorkspaces();
+  </script>
+</body>
+</html>

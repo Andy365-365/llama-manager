@@ -1,0 +1,63 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>配置详情 - Llama Manager</title>
+  <link rel="stylesheet" href="/static/css/style.css">
+</head>
+<body>
+  <div class="layout">
+    <aside class="sidebar">
+      <div class="logo"><span>Llama Manager</span></div>
+      <nav>
+        <a href="/dashboard"><span>仪表盘</span></a>
+        <a href="/workspaces"><span>空间管理</span></a>
+        <a href="/instances"><span>实例管理</span></a>
+        <a href="/gpu"><span>GPU 监控</span></a>
+        <a href="/models"><span>模型扫描</span></a>
+      </nav>
+    </aside>
+    <main class="main">
+      <div class="toolbar">
+        <h2 style="margin:0;">配置详情</h2>
+        <div class="btn-group">
+          <button class="btn" onclick="location.href='/dashboard'">返回</button>
+          <button class="btn btn-primary" onclick="location.href='/config/{{ cid }}/edit'">编辑</button>
+        </div>
+      </div>
+      <div class="card" id="config-info">加载中...</div>
+    </main>
+  </div>
+  <script src="/static/js/app.js"></script>
+  <script>
+const CID = {{ cid }};
+async function load() {
+  const c = await api('/api/configs/' + CID);
+  if (!c.ok) { document.getElementById('config-info').innerHTML = '<p>' + c.error + '</p>'; return; }
+  const info = [
+    ['名称', c.name], ['描述', c.description || '-'],
+    ['空间', c.workspace_name || '-'], ['实例', c.llama_instance_name || '-'],
+    ['模型', c.model_path || '-'], ['端口', c.port || '-'],
+    ['上下文', c.ctx_size || '-'], ['GPU层数', c.gpu_layers || '-'],
+    ['并行数', c.parallel || '-'], ['线程数', c.threads || '-'],
+    ['状态', c.status || 'stopped'], ['PID', c.pid || '-'],
+  ];
+  let html = '<table><tbody>';
+  info.forEach(([k,v]) => { html += '<tr><td style="font-weight:bold;padding:4px 12px;width:120px">' + k + '</td><td style="padding:4px 12px">' + v + '</td></tr>'; });
+  html += '</tbody></table>';
+  html += '<div style="margin-top:12px" class="btn-group">';
+  if (c.status === 'running') {
+    html += '<button class="btn btn-danger" onclick="doStop()">停止</button>';
+    html += '<button class="btn" onclick="location.href=\'/config/'+CID+'/log\'">查看日志</button>';
+  } else {
+    html += '<button class="btn btn-success" onclick="doStart()">启动</button>';
+  }
+  html += '</div>';
+  document.getElementById('config-info').innerHTML = html;
+}
+async function doStart() { const r = await api('/api/runtime/'+CID+'/start', {method:'POST'}); if(r.ok){toast('启动成功','success');load()}else toast(r.error,'error'); }
+async function doStop() { const r = await api('/api/runtime/'+CID+'/stop', {method:'POST'}); if(r.ok){toast('已停止','success');load()}else toast(r.error,'error'); }
+load();
+  </script>
+</body>
+</html>

@@ -1,0 +1,89 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>GPU 监控 - Llama Manager</title>
+  <link rel="stylesheet" href="/static/css/style.css">
+  <script src="https://cdn.jsdelivr.net/npm/echarts@5/dist/echarts.min.js"></script>
+</head>
+<body>
+  <div class="layout">
+    <aside class="sidebar">
+      <div class="logo">🦙 <span>Llama Manager</span></div>
+      <nav>
+        <a href="/dashboard"><span>📊 仪表盘</span></a>
+        <a href="/workspaces"><span>📁 空间管理</span></a>
+        <a href="/instances"><span>⚙️ 实例管理</span></a>
+        <a href="/gpu"><span>🖥️ GPU 监控</span></a>
+        <a href="/models"><span>📦 模型扫描</span></a>
+      </nav>
+    </aside>
+    <main class="main">
+      <div class="toolbar">
+        <h2 style="margin:0;">GPU 监控 (配置级)</h2>
+        <div class="btn-group">
+          <select id="time-range" onchange="refreshCharts()" style="padding:4px 8px;border-radius:4px;border:1px solid #d9d9d9;">
+            <option value="5">5 分钟</option>
+            <option value="15">15 分钟</option>
+            <option value="30" selected>30 分钟</option>
+            <option value="60">1 小时</option>
+          </select>
+          <button class="btn" onclick="location.href='/dashboard'">← 返回</button>
+        </div>
+      </div>
+      <div class="card">
+        <div class="card-header"><span class="card-title">GPU 利用率</span></div>
+        <div id="gpu-chart" style="height:300px;"></div>
+      </div>
+      <div class="card">
+        <div class="card-header"><span class="card-title">显存使用</span></div>
+        <div id="mem-chart" style="height:300px;"></div>
+      </div>
+      <div class="card">
+        <div class="card-header"><span class="card-title">温度 & 功耗</span></div>
+        <div id="temp-chart" style="height:300px;"></div>
+      </div>
+    </main>
+  </div>
+  <script src="/static/js/app.js"></script>
+  <script>
+const CID = {{ cid }};
+let gpuChart, memChart, tempChart;
+document.addEventListener('DOMContentLoaded', () => {
+  gpuChart = echarts.init(document.getElementById('gpu-chart'));
+  memChart = echarts.init(document.getElementById('mem-chart'));
+  tempChart = echarts.init(document.getElementById('temp-chart'));
+  window.addEventListener('resize', () => { gpuChart.resize(); memChart.resize(); tempChart.resize(); });
+  refreshCharts();
+  setInterval(refreshCharts, 5000);
+});
+
+async function refreshCharts() {
+  const mins = document.getElementById('time-range').value;
+  const data = await api('/api/runtime/gpu/metrics/' + CID + '?minutes=' + mins);
+  if (!data.length) { toast('暂无数据', 'info'); return; }
+
+  // Group by GPU
+  const gpus = {};
+  data.forEach(d => { if (!gpus[d.gpu_index]) gpus[d.gpu_index] = []; gpus[d.gpu_index].push(d); });
+
+  const colors = ['#5470c6','#91cc75','#fac858','#ee6666','#73c0de'];
+  const gpuSeries = [], memSeries = [], tempSeries = [], powerSeries = [];
+  const tempLineData = [];
+
+  Object.keys(gpus).forEach((idx, i) => {
+    const pts = gpus[idx];
+    const times = pts.map(p => new Date(p.timestamp).toLocaleTimeString());
+    gpuSeries.push({ name:'GPU '+idx+' 利用率', type:'line', data: pts.map(p => p.utilization_gpu), smooth:true, color:colors[i%colors.length] });
+    memSeries.push({ name:'GPU '+idx+' 显存(MB)', type:'line', data: pts.map(p => p.memory_used), smooth:true, color:colors[i%colors.length] });
+    tempSeries.push({ name:'GPU '+idx+' 温度', type:'line', data: pts.map(p => p.temperature), smooth:true, color:'#ff4d4f', yAxisIndex:0 });
+    powerSeries.push({ name:'GPU '+idx+' 功耗(W)', type:'line', data: pts.map(p => p.power_usage), smooth:true, color:'#722ed1', yAxisIndex:1 });
+  });
+
+  gpuChart.setOption({ tooltip:{trigger:'axis'}, legend:{data:gpuSeries.map(s=>s.name)}, xAxis:{type:'category',data:gpuSeries.length?gpuSeries[0].data.map((_,i)=>i):[]}, yAxis:{type:'value',max:100,name:'%'}, series:gpuSeries });
+  memChart.setOption({ tooltip:{trigger:'axis'}, legend:{data:memSeries.map(s=>s.name)}, xAxis:{type:'category',data:memSeries.length?memSeries[0].data.map((_,i)=>i):[]}, yAxis:{type:'value',name:'MB'}, series:memSeries });
+  tempChart.setOption({ tooltip:{trigger:'axis'}, legend:{data:[...tempSeries.map(s=>s.name),...powerSeries.map(s=>s.name)]}, xAxis:{type:'category',data:tempSeries.length?tempSeries[0].data.map((_,i)=>i):[]}, yAxis:[{type:'value',name:'温度(°C)',max:120},{type:'value',name:'功耗(W)',max:400}], series:[...tempSeries,...powerSeries] });
+}
+  </script>
+</body>
+</html>

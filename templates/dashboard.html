@@ -1,0 +1,154 @@
+{% extends "base.html" %}
+{% block title %}仪表盘 - Llama Manager{% endblock %}
+{% block head %}
+<script src="https://cdn.jsdelivr.net/npm/echarts@5/dist/echarts.min.js"></script>
+{% endblock %}
+{% block content %}
+<h2 style="margin-bottom:20px;">仪表盘</h2>
+
+<div class="dash-grid" id="stats-grid">
+  <div class="dash-stat"><div class="value" id="stat-running">-</div><div class="label">运行中实例</div></div>
+  <div class="dash-stat"><div class="value" id="stat-configs">-</div><div class="label">总配置数</div></div>
+  <div class="dash-stat"><div class="value" id="stat-gpus">-</div><div class="label">GPU 数量</div></div>
+  <div class="dash-stat"><div class="value" id="stat-gpu-util">-</div><div class="label">GPU 平均利用率</div></div>
+</div>
+
+<!-- GPU Quick Overview -->
+<div class="card">
+  <div class="card-header">
+    <span class="card-title">GPU 实时状态</span>
+    <button class="btn btn-sm" onclick="refreshDashboard()">🔄 刷新</button>
+  </div>
+  <div id="gpu-overview" style="display:flex;gap:16px;flex-wrap:wrap;"></div>
+</div>
+
+<!-- Running Instances -->
+<div class="card">
+  <div class="card-header">
+    <span class="card-title">运行中的配置</span>
+  </div>
+  <table>
+    <thead>
+      <tr><th>名称</th><th>空间</th><th>状态</th><th>PID</th><th>端口</th><th>操作</th></tr>
+    </thead>
+    <tbody id="running-table">
+      <tr><td colspan="6" class="loading">加载中...</td></tr>
+    </tbody>
+  </table>
+</div>
+
+<!-- All Configs -->
+<div class="card">
+  <div class="card-header">
+    <span class="card-title">全部配置</span>
+    <a href="/config/new" class="btn btn-primary btn-sm">+ 新建配置</a>
+  </div>
+  <table>
+    <thead>
+      <tr><th>名称</th><th>空间</th><th>实例</th><th>模型</th><th>端口</th><th>状态</th><th>操作</th></tr>
+    </thead>
+    <tbody id="all-table">
+      <tr><td colspan="7" class="loading">加载中...</td></tr>
+    </tbody>
+  </table>
+</div>
+{% endblock %}
+{% block scripts %}
+<script>
+async function refreshDashboard() {
+  // GPU info
+  const gpu = await api('/api/runtime/gpu/info');
+  const gpus = gpu.gpus || [];
+  document.getElementById('stat-gpus').textContent = gpu.count || 0;
+  if (gpus.length) {
+    const avg = (gpus.reduce((s,g) => s + g.utilization_gpu, 0) / gpus.length).toFixed(1);
+    document.getElementById('stat-gpu-util').textContent = avg + '%';
+  }
+
+  // GPU overview cards
+  const overview = document.getElementById('gpu-overview');
+  overview.innerHTML = gpus.map(g => `
+    <div style="flex:1;min-width:200px;padding:12px;border:1px solid #f0f0f0;border-radius:4px;">
+      <div style="font-weight:600;margin-bottom:8px;">GPU ${g.index}: ${g.name}</div>
+      <div style="font-size:13px;color:#666;">
+        利用率: <b style="color:${g.utilization_gpu>80?'#ff4d4f':'#52c41a'}">${g.utilization_gpu.toFixed(1)}%</b> |
+        显存: ${g.memory_used.toFixed(0)}/${g.memory_total.toFixed(0)} MB |
+        温度: ${g.temperature.toFixed(0)}°C |
+        功耗: ${g.power_draw.toFixed(0)}W
+      </div>
+    </div>
+  `).join('');
+
+  // Running status
+  const status = await api('/api/runtime/status/all');
+  const running = status.filter(s => s.status === 'running');
+  document.getElementById('stat-running').textContent = running.length;
+
+  // All configs
+  const configs = await api('/api/configs/');
+  document.getElementById('stat-configs').textContent = configs.length;
+
+  // Running table
+  const rt = document.getElementById('running-table');
+  if (status.length === 0) {
+    rt.innerHTML = '<tr><td colspan="6" style="text-align:center;color:#999;">暂无配置</td></tr>';
+  } else {
+    rt.innerHTML = status.map(s => `
+      <tr>
+        <td><a href="/config/${s.id}/edit">${s.name}</a></td>
+        <td>${s.workspace_name}</td>
+        <td>${statusBadge(s.status)}</td>
+        <td>${s.pid || '-'}</td>
+        <td>${s.port || '-'}</td>
+        <td>
+          <div class="btn-group">
+            ${s.status === 'running'
+              ? `<button class="btn btn-sm btn-danger" onclick="doStop(${s.id})">停止</button>
+                 <a href="/config/${s.id}/log" class="btn btn-sm">日志</a>`
+              : `<button class="btn btn-sm btn-success" onclick="doStart(${s.id})">启动</button>`}
+          </div>
+        </td>
+      </tr>
+    `).join('');
+  }
+
+  // All table
+  const at = document.getElementById('all-table');
+  at.innerHTML = configs.map(c => `
+    <tr>
+      <td><a href="/config/${c.id}/edit">${c.name}</a></td>
+      <td>${c.workspace_name}</td>
+      <td>${c.llama_instance_name}</td>
+      <td style="max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${c.model_path}">${c.model_path}</td>
+      <td>${c.port || '-'}</td>
+      <td>${statusBadge(c.status)}</td>
+      <td>
+        <div class="btn-group">
+          <a href="/config/${c.id}/edit" class="btn btn-sm">编辑</a>
+          ${c.status === 'running'
+            ? `<button class="btn btn-sm btn-danger" onclick="doStop(${c.id})">停止</button>`
+            : `<button class="btn btn-sm btn-success" onclick="doStart(${c.id})">启动</button>`}
+        </div>
+      </td>
+    </tr>
+  `).join('');
+}
+
+async function doStart(cid) {
+  const r = await api(`/api/runtime/${cid}/start`, {method:'POST'});
+  if (r.ok) toast('启动成功, PID: ' + r.pid, 'success');
+  else toast(r.error, 'error');
+  setTimeout(refreshDashboard, 1000);
+}
+
+async function doStop(cid) {
+  const r = await api(`/api/runtime/${cid}/stop`, {method:'POST'});
+  if (r.ok) toast('已停止', 'success');
+  else toast(r.error, 'error');
+  setTimeout(refreshDashboard, 1000);
+}
+
+refreshDashboard();
+setInterval(refreshDashboard, 10000);
+</script>
+{% endblock %}

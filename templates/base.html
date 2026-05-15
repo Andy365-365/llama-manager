@@ -1,0 +1,29 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>{% block title %}Llama.cpp Manager{% endblock %}</title>
+  <link rel="stylesheet" href="/static/css/style.css">
+  {% block head %}{% endblock %}
+</head>
+<body>
+  <div class="layout">
+    <aside class="sidebar">
+      <div class="logo">🦙 <span>Llama Manager</span></div>
+      <nav>
+        <a href="/dashboard"><span>📊 仪表盘</span></a>
+        <a href="/workspaces"><span>📁 空间管理</span></a>
+        <a href="/instances"><span>⚙️ 实例管理</span></a>
+        <a href="/gpu"><span>🖥️ GPU 监控</span></a>
+        <a href="/models"><span>📦 模型扫描</span></a>
+      </nav>
+    </aside>
+    <main class="main">
+      {% block content %}{% endblock %}
+    </main>
+  </div>
+  <script src="/static/js/app.js"></script>
+  {% block scripts %}{% endblock %}
+</body>
+</html>

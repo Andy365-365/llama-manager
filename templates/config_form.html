@@ -1,0 +1,249 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>配置编辑 - Llama Manager</title>
+  <link rel="stylesheet" href="/static/css/style.css">
+</head>
+<body>
+  <div class="layout">
+    <aside class="sidebar">
+      <div class="logo">🦙 <span>Llama Manager</span></div>
+      <nav>
+        <a href="/dashboard"><span>📊 仪表盘</span></a>
+        <a href="/workspaces"><span>📁 空间管理</span></a>
+        <a href="/instances"><span>⚙️ 实例管理</span></a>
+        <a href="/gpu"><span>🖥️ GPU 监控</span></a>
+        <a href="/models"><span>📦 模型扫描</span></a>
+      </nav>
+    </aside>
+    <main class="main">
+      <div class="toolbar">
+        <h2 style="margin:0;" id="page-title">新建配置</h2>
+        <div class="btn-group">
+          <button class="btn" onclick="location.href='/dashboard'">← 返回</button>
+          <button class="btn btn-primary" onclick="saveConfig()">💾 保存</button>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-header"><span class="card-title">基本信息</span></div>
+        <div class="form-row">
+          <div class="form-group"><label>名称</label><input type="text" id="c-name" placeholder="配置名称"></div>
+          <div class="form-group"><label>所属空间</label><select id="c-workspace"></select></div>
+          <div class="form-group"><label>llama.cpp 实例</label><select id="c-instance"></select></div>
+        </div>
+        <div class="form-group"><label>描述</label><textarea id="c-desc" placeholder="可选描述"></textarea></div>
+      </div>
+
+      <div class="card">
+        <div class="card-header"><span class="card-title">模型设置</span></div>
+        <div class="form-row">
+          <div class="form-group"><label>模型来源</label><select id="c-model-source"><option value="path">本地路径</option><option value="hf">HuggingFace ID</option></select></div>
+          <div class="form-group"><label id="model-path-label">模型路径</label><input type="text" id="c-model-path" placeholder="/path/to/model.gguf 或 HF repo id"></div>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-header"><span class="card-title">运行参数</span></div>
+        <div class="form-row">
+          <div class="form-group"><label>上下文长度 (--ctx-size)</label><input type="number" id="c-ctx-size" placeholder="4096"></div>
+          <div class="form-group"><label>GPU 层数 (--gpu-layers)</label><input type="number" id="c-gpu-layers" placeholder="99"></div>
+          <div class="form-group"><label>并行数 (--parallel)</label><input type="number" id="c-parallel" placeholder="4"></div>
+          <div class="form-group"><label>线程数 (-t)</label><input type="number" id="c-threads" placeholder="8"></div>
+          <div class="form-group"><label>批处理线程 (--threads-batch)</label><input type="number" id="c-threads-batch" placeholder="8"></div>
+          <div class="form-group"><label>批大小 (--batch-size)</label><input type="number" id="c-batch-size" placeholder="2048"></div>
+          <div class="form-group"><label>微批大小 (--ubatch-size)</label><input type="number" id="c-ubatch-size" placeholder="512"></div>
+          <div class="form-group"><label>张量分割 (--tensor-split)</label><input type="text" id="c-tensor-split" placeholder="例如: 1,1"></div>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-header"><span class="card-title">网络设置</span></div>
+        <div class="form-row">
+          <div class="form-group"><label>监听地址 (--host)</label><input type="text" id="c-host" placeholder="0.0.0.0"></div>
+          <div class="form-group"><label>端口 (--port)</label><input type="number" id="c-port" placeholder="8080"></div>
+          <div class="form-group"><label>API Key (--api-key)</label><input type="password" id="c-api-key" placeholder="可选"></div>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-header"><span class="card-title">高级选项</span></div>
+        <div class="form-row">
+          <div class="form-group"><label>Flash Attention (--flash-attn)</label><select id="c-flash-attn"><option value="">默认</option><option value="1">启用</option><option value="2">启用 v2</option></select></div>
+          <div class="form-group"><label>K 缓存类型 (--cache-type-k)</label><select id="c-cache-type-k"><option value="">自动</option><option value="f16">f16</option><option value="f32">f32</option><option value="q8_0">q8_0</option><option value="q4_0">q4_0</option></select></div>
+          <div class="form-group"><label>V 缓存类型 (--cache-type-v)</label><select id="c-cache-type-v"><option value="">自动</option><option value="f16">f16</option><option value="f32">f32</option><option value="q8_0">q8_0</option><option value="q4_0">q4_0</option></select></div>
+          <div class="form-group"><label>缓存 RAM (--cache-ram)</label><input type="text" id="c-cache-ram" placeholder="例如: 8G"></div>
+          <div class="form-group"><label>Jinja 模板</label><select id="c-jinja"><option value="">默认</option><option value="true">启用</option><option value="false">禁用</option></select></div>
+          <div class="form-group"><label>Reasoning (--reasoning)</label><input type="text" id="c-reasoning" placeholder="可选"></div>
+          <div class="form-group"><label>分割模式 (--split-mode)</label><select id="c-split-mode"><option value="">默认</option><option value="LAYER">LAYER</option><option value="ROW">ROW</option></select></div>
+        </div>
+        <div class="form-row" style="margin-top:12px">
+          <div class="form-group form-check"><input type="checkbox" id="c-mlock"><label for="c-mlock">内存锁定 (--mlock)</label></div>
+          <div class="form-group form-check"><input type="checkbox" id="c-mmap" checked><label for="c-mmap">内存映射 (--mmap)</label></div>
+          <div class="form-group form-check"><input type="checkbox" id="c-log-timestamps"><label for="c-log-timestamps">日志时间戳 (--log-timestamps)</label></div>
+          <div class="form-group form-check"><input type="checkbox" id="c-metrics"><label for="c-metrics">指标 (--metrics)</label></div>
+        </div>
+        <!-- Speculative decoding -->
+        <div class="form-row" style="margin-top:12px">
+          <div class="form-group"><label>Spec 类型 (--spec-type)</label><input type="text" id="c-spec-type" placeholder="可选"></div>
+          <div class="form-group"><label>Spec 草稿数 (--spec-draft-n-max)</label><input type="number" id="c-spec-draft-n-max" placeholder="可选"></div>
+          <div class="form-group"><label>Spec 概率阈值 (--spec-draft-p-min)</label><input type="number" step="0.01" id="c-spec-draft-p-min" placeholder="可选"></div>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-header"><span class="card-title">自定义参数</span></div>
+        <div class="form-group"><label>额外命令行参数</label><textarea id="c-extra-args" placeholder="例如: --verbose --verbose-prompt"></textarea></div>
+        <div style="margin-top:8px"><button class="btn btn-sm" onclick="showCommand()">🔍 预览生成的命令</button></div>
+        <div id="cmd-preview" style="display:none;margin-top:8px;padding:12px;background:#f5f5f5;border-radius:4px;font-family:monospace;font-size:13px;white-space:pre-wrap;word-break:break-all;"></div>
+      </div>
+
+      <div class="card" id="runtime-section" style="display:none">
+        <div class="card-header"><span class="card-title">运行状态</span></div>
+        <div id="runtime-info"></div>
+      </div>
+    </main>
+  </div>
+  <script src="/static/js/app.js"></script>
+  <script>
+const CID = {{ cid }};
+let workspaces = [], instances = [];
+
+async function init() {
+  workspaces = await api('/api/workspaces/');
+  instances = await api('/api/instances/');
+  // Populate selects
+  document.getElementById('c-workspace').innerHTML = workspaces.map(w => '<option value="'+w.id+'">'+w.name+'</option>').join('');
+  document.getElementById('c-instance').innerHTML = instances.map(i => '<option value="'+i.id+'">'+i.name+' ('+i.install_path+')</option>').join('');
+  if (CID) await loadConfig();
+  else { document.getElementById('page-title').textContent = '新建配置'; }
+  // Auto-select default instance
+  const def = instances.find(i => i.is_default);
+  if (def) document.getElementById('c-instance').value = def.id;
+}
+
+async function loadConfig() {
+  const r = await api('/api/configs/' + CID);
+  if (!r.ok) { toast(r.error, 'error'); return; }
+  const c = r;
+  document.getElementById('page-title').textContent = '编辑配置: ' + c.name;
+  document.getElementById('c-name').value = c.name || '';
+  document.getElementById('c-workspace').value = c.workspace_id || '';
+  document.getElementById('c-instance').value = c.llama_instance_id || '';
+  document.getElementById('c-desc').value = c.description || '';
+  document.getElementById('c-model-source').value = c.model_source || 'path';
+  document.getElementById('c-model-path').value = c.model_path || '';
+  document.getElementById('c-ctx-size').value = c.ctx_size || '';
+  document.getElementById('c-gpu-layers').value = c.gpu_layers || '';
+  document.getElementById('c-parallel').value = c.parallel || '';
+  document.getElementById('c-threads').value = c.threads || '';
+  document.getElementById('c-threads-batch').value = c.threads_batch || '';
+  document.getElementById('c-batch-size').value = c.batch_size || '';
+  document.getElementById('c-ubatch-size').value = c.ubatch_size || '';
+  document.getElementById('c-tensor-split').value = c.tensor_split || '';
+  document.getElementById('c-host').value = c.host || '';
+  document.getElementById('c-port').value = c.port || '';
+  document.getElementById('c-api-key').value = c.api_key || '';
+  document.getElementById('c-flash-attn').value = c.flash_attn || '';
+  document.getElementById('c-cache-type-k').value = c.cache_type_k || '';
+  document.getElementById('c-cache-type-v').value = c.cache_type_v || '';
+  document.getElementById('c-cache-ram').value = c.cache_ram || '';
+  document.getElementById('c-jinja').value = c.jinja != null ? String(c.jinja) : '';
+  document.getElementById('c-reasoning').value = c.reasoning || '';
+  document.getElementById('c-mlock').checked = !!c.mlock;
+  document.getElementById('c-mmap').checked = c.mmap != null ? c.mmap : true;
+  document.getElementById('c-log-timestamps').checked = !!c.log_timestamps;
+  document.getElementById('c-metrics').checked = !!c.metrics;
+  document.getElementById('c-spec-type').value = c.spec_type || '';
+  document.getElementById('c-spec-draft-n-max').value = c.spec_draft_n_max || '';
+  document.getElementById('c-spec-draft-p-min').value = c.spec_draft_p_min || '';
+  document.getElementById('c-split-mode').value = c.split_mode || '';
+  document.getElementById('c-extra-args').value = c.extra_args || '';
+  // Runtime info
+  if (c.pid || c.status === 'running') {
+    document.getElementById('runtime-section').style.display = 'block';
+    document.getElementById('runtime-info').innerHTML = '<p>状态: ' + statusBadge(c.status) + ' | PID: ' + (c.pid||'-') + ' | 端口: ' + (c.port||'-') + '</p><div class="btn-group" style="margin-top:8px"><button class="btn btn-danger" onclick="doStop()">停止</button><button class="btn" onclick="location.href=\'/config/'+CID+'/log\'">查看日志</button><button class="btn" onclick="location.href=\'/config/'+CID+'/gpu\'">GPU 监控</button></div>';
+  }
+}
+
+function getFormData() {
+  const v = (id) => { const el = document.getElementById(id); return el.value || null; };
+  const n = (id) => { const el = document.getElementById(id); return el.value ? parseInt(el.value) : null; };
+  const cb = (id) => document.getElementById(id).checked;
+  return {
+    name: v('c-name'), workspace_id: parseInt(v('c-workspace')),
+    llama_instance_id: parseInt(v('c-instance')), description: v('c-desc'),
+    model_source: v('c-model-source'), model_path: v('c-model-path'),
+    ctx_size: n('c-ctx-size'), gpu_layers: n('c-gpu-layers'),
+    parallel: n('c-parallel'), threads: n('c-threads'),
+    threads_batch: n('c-threads-batch'), batch_size: n('c-batch-size'),
+    ubatch_size: n('c-ubatch-size'), tensor_split: v('c-tensor-split'),
+    host: v('c-host'), port: n('c-port'), api_key: v('c-api-key'),
+    flash_attn: v('c-flash-attn'), cache_type_k: v('c-cache-type-k'),
+    cache_type_v: v('c-cache-type-v'), cache_ram: v('c-cache-ram'),
+    jinja: v('c-jinja') === 'true' ? true : v('c-jinja') === 'false' ? false : null,
+    reasoning: v('c-reasoning'), mlock: cb('c-mlock'),
+    mmap: document.getElementById('c-mmap').checked ? true : null,
+    log_timestamps: cb('c-log-timestamps'), metrics: cb('c-metrics'),
+    spec_type: v('c-spec-type'), spec_draft_n_max: n('c-spec-draft-n-max'),
+    spec_draft_p_min: v('c-spec-draft-p-min') ? parseFloat(v('c-spec-draft-p-min')) : null,
+    split_mode: v('c-split-mode'), extra_args: v('c-extra-args') || '',
+  };
+}
+
+async function saveConfig() {
+  const fd = getFormData();
+  if (!fd.name) { toast('请输入配置名称', 'warning'); return; }
+  if (!fd.model_path) { toast('请输入模型路径', 'warning'); return; }
+  const r = CID ? await api('/api/configs/' + CID, { method:'PUT', body: JSON.stringify(fd) }) : await api('/api/configs/', { method:'POST', body: JSON.stringify(fd) });
+  if (r.ok) { toast('保存成功', 'success'); if (!CID) location.href = '/config/' + r.id + '/edit'; }
+  else toast(r.error, 'error');
+}
+
+async function doStop() {
+  const r = await api('/api/runtime/' + CID + '/stop', { method:'POST' });
+  if (r.ok) { toast('已停止', 'success'); document.getElementById('runtime-section').style.display = 'none'; }
+  else toast(r.error, 'error');
+}
+
+function showCommand() {
+  const inst = instances.find(i => i.id == document.getElementById('c-instance').value);
+  if (!inst) { toast('请先选择实例', 'warning'); return; }
+  const fd = getFormData();
+  let cmd = inst.server_binary;
+  if (fd.model_source === 'hf') cmd += ' -hf ' + fd.model_path; else cmd += ' -m ' + fd.model_path;
+  if (fd.ctx_size) cmd += ' --ctx-size ' + fd.ctx_size;
+  if (fd.gpu_layers) cmd += ' --gpu-layers ' + fd.gpu_layers;
+  if (fd.tensor_split) cmd += ' --tensor-split ' + fd.tensor_split;
+  if (fd.parallel) cmd += ' --parallel ' + fd.parallel;
+  if (fd.threads) cmd += ' -t ' + fd.threads;
+  if (fd.threads_batch) cmd += ' --threads-batch ' + fd.threads_batch;
+  if (fd.batch_size) cmd += ' --batch-size ' + fd.batch_size;
+  if (fd.ubatch_size) cmd += ' --ubatch-size ' + fd.ubatch_size;
+  if (fd.flash_attn) cmd += ' --flash-attn ' + fd.flash_attn;
+  if (fd.cache_type_k) cmd += ' --cache-type-k ' + fd.cache_type_k;
+  if (fd.cache_type_v) cmd += ' --cache-type-v ' + fd.cache_type_v;
+  if (fd.cache_ram) cmd += ' --cache-ram ' + fd.cache_ram;
+  if (fd.host) cmd += ' --host ' + fd.host;
+  if (fd.port) cmd += ' --port ' + fd.port;
+  if (fd.api_key) cmd += ' --api-key ' + fd.api_key;
+  if (fd.jinja !== null) cmd += fd.jinja ? ' --jinja' : ' --no-jinja';
+  if (fd.reasoning) cmd += ' --reasoning ' + fd.reasoning;
+  if (fd.mlock) cmd += ' --mlock';
+  if (fd.mmap) cmd += ' --mmap';
+  if (fd.log_timestamps) cmd += ' --log-timestamps';
+  if (fd.metrics) cmd += ' --metrics';
+  if (fd.spec_type) cmd += ' --spec-type ' + fd.spec_type;
+  if (fd.spec_draft_n_max) cmd += ' --spec-draft-n-max ' + fd.spec_draft_n_max;
+  if (fd.spec_draft_p_min) cmd += ' --spec-draft-p-min ' + fd.spec_draft_p_min;
+  if (fd.split_mode) cmd += ' --split-mode ' + fd.split_mode;
+  if (fd.extra_args) cmd += ' ' + fd.extra_args;
+  document.getElementById('cmd-preview').textContent = cmd;
+  document.getElementById('cmd-preview').style.display = 'block';
+}
+
+init();
+  </script>
+</body>
+</html>

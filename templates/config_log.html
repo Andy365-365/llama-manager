@@ -1,0 +1,97 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>日志 - Llama Manager</title>
+  <link rel="stylesheet" href="/static/css/style.css">
+</head>
+<body>
+  <div class="layout">
+    <aside class="sidebar">
+      <div class="logo">🦙 <span>Llama Manager</span></div>
+      <nav>
+        <a href="/dashboard"><span>📊 仪表盘</span></a>
+        <a href="/workspaces"><span>📁 空间管理</span></a>
+        <a href="/instances"><span>⚙️ 实例管理</span></a>
+        <a href="/gpu"><span>🖥️ GPU 监控</span></a>
+        <a href="/models"><span>📦 模型扫描</span></a>
+      </nav>
+    </aside>
+    <main class="main">
+      <div class="toolbar">
+        <h2 style="margin:0;">日志查看</h2>
+        <div class="btn-group">
+          <button class="btn" onclick="location.href='/dashboard'">← 返回</button>
+          <button class="btn" onclick="loadTail()">🔄 刷新</button>
+        </div>
+      </div>
+      <div class="card">
+        <div class="form-row" style="margin-bottom:12px">
+          <div class="form-group" style="flex:1"><input type="text" id="log-search" placeholder="搜索日志内容..."></div>
+          <button class="btn" onclick="searchLog()">🔍 搜索</button>
+        </div>
+        <div class="tabs">
+          <div class="tab active" onclick="switchTab('tail')">最近日志</div>
+          <div class="tab" onclick="switchTab('stream')">实时流</div>
+          <div class="tab" onclick="switchTab('search')">搜索结果</div>
+        </div>
+        <div id="tab-tail" class="tab-content active"><div class="log-container" id="log-tail">加载中...</div></div>
+        <div id="tab-stream" class="tab-content"><div class="log-container" id="log-stream">点击"实时流"标签开始...</div></div>
+        <div id="tab-search" class="tab-content"><div class="log-container" id="log-search-result">请先搜索</div></div>
+      </div>
+    </main>
+  </div>
+  <script src="/static/js/app.js"></script>
+  <script>
+const CID = {{ cid }};
+let streamActive = false;
+
+async function loadTail() {
+  const r = await api('/api/runtime/' + CID + '/log/tail?lines=200');
+  document.getElementById('log-tail').textContent = r.log || '暂无日志';
+  scrollToBottom('log-tail');
+}
+
+async function searchLog() {
+  const pattern = document.getElementById('log-search').value.trim();
+  if (!pattern) { toast('请输入搜索内容', 'warning'); return; }
+  const r = await api('/api/runtime/' + CID + '/log/search', { method:'POST', body: JSON.stringify({ pattern }) });
+  document.getElementById('log-search-result').textContent = r.result || '无结果';
+  switchTab('search');
+}
+
+function switchTab(name) {
+  document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+  document.querySelectorAll('.tab-content').forEach(t => t.classList.remove('active'));
+  document.getElementById('tab-' + name).classList.add('active');
+  event.target.classList.add('active');
+  if (name === 'stream' && !streamActive) startStream();
+  if (name !== 'stream') stopStream();
+}
+
+function startStream() {
+  streamActive = true;
+  const el = document.getElementById('log-stream');
+  const evt = new EventSource('/api/runtime/' + CID + '/log/stream');
+  evt.onmessage = (e) => {
+    el.textContent += e.data;
+    scrollToBottom('log-stream');
+  };
+  evt.onerror = () => { evt.close(); streamActive = false; };
+  window._sse = evt;
+}
+
+function stopStream() {
+  streamActive = false;
+  if (window._sse) { window._sse.close(); }
+}
+
+function scrollToBottom(id) {
+  const el = document.getElementById(id);
+  el.scrollTop = el.scrollHeight;
+}
+
+loadTail();
+  </script>
+</body>
+</html>

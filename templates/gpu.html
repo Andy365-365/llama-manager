@@ -1,0 +1,111 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>GPU 监控 - Llama Manager</title>
+  <link rel="stylesheet" href="/static/css/style.css">
+  <script src="https://cdn.jsdelivr.net/npm/echarts@5/dist/echarts.min.js"></script>
+</head>
+<body>
+  <div class="layout">
+    <aside class="sidebar">
+      <div class="logo">🦙 <span>Llama Manager</span></div>
+      <nav>
+        <a href="/dashboard"><span>📊 仪表盘</span></a>
+        <a href="/workspaces"><span>📁 空间管理</span></a>
+        <a href="/instances"><span>⚙️ 实例管理</span></a>
+        <a href="/gpu"><span>🖥️ GPU 监控</span></a>
+        <a href="/models"><span>📦 模型扫描</span></a>
+      </nav>
+    </aside>
+    <main class="main">
+      <div class="toolbar">
+        <h2 style="margin:0;">GPU 监控</h2>
+        <div class="btn-group">
+          <button class="btn btn-sm" onclick="refreshGPU()">🔄 刷新</button>
+        </div>
+      </div>
+      <div id="gpu-cards" style="display:flex;gap:16px;flex-wrap:wrap;margin-bottom:20px;"></div>
+      <div class="card">
+        <div class="card-header">
+          <span class="card-title">GPU 利用率趋势</span>
+          <select id="gpu-select" onchange="refreshGPU()" style="padding:4px 8px;border-radius:4px;border:1px solid #d9d9d9;">
+            <option value="-1">全部 GPU</option>
+          </select>
+        </div>
+        <div id="gpu-chart" style="height:350px;"></div>
+      </div>
+      <div class="card">
+        <div class="card-header">
+          <span class="card-title">显存使用趋势</span>
+        </div>
+        <div id="mem-chart" style="height:300px;"></div>
+      </div>
+      <div class="card">
+        <div class="card-header">
+          <span class="card-title">温度 & 功耗</span>
+        </div>
+        <div id="temp-chart" style="height:300px;"></div>
+      </div>
+    </main>
+  </div>
+  <script src="/static/js/app.js"></script>
+  <script>
+let gpuChart, memChart, tempChart;
+document.addEventListener('DOMContentLoaded', () => {
+  gpuChart = echarts.init(document.getElementById('gpu-chart'));
+  memChart = echarts.init(document.getElementById('mem-chart'));
+  tempChart = echarts.init(document.getElementById('temp-chart'));
+  window.addEventListener('resize', () => { gpuChart.resize(); memChart.resize(); tempChart.resize(); });
+  refreshGPU();
+  setInterval(refreshGPU, 5000);
+});
+async function refreshGPU() {
+  const gpu = await api('/api/runtime/gpu/info');
+  const gpus = gpu.gpus || [];
+  // Cards
+  document.getElementById('gpu-cards').innerHTML = gpus.map(g => '<div style="flex:1;min-width:220px;background:#fff;border-radius:8px;padding:20px;box-shadow:0 1px 3px rgba(0,0,0,0.08)"><div style="font-weight:600;margin-bottom:8px">GPU '+g.index+': '+g.name+'</div><div style="font-size:13px;color:#666">利用率: <b style="color:'+(g.utilization_gpu>80?'#ff4d4f':'#52c41a')+'">'+g.utilization_gpu.toFixed(1)+'%</b> | 显存: '+g.memory_used.toFixed(0)+'/'+g.memory_total.toFixed(0)+' MB | 温度: '+g.temperature.toFixed(0)+'°C | 功耗: '+g.power_draw.toFixed(0)+'W | 风扇: '+g.fan_speed.toFixed(0)+'%</div></div>').join('');
+  // Select
+  const sel = document.getElementById('gpu-select');
+  const val = sel.value;
+  sel.innerHTML = '<option value="-1">全部 GPU</option>' + gpus.map(g => '<option value="'+g.index+'">GPU '+g.index+'</option>').join('');
+  sel.value = val;
+  // Charts - get metrics from first running config or just show current
+  renderCharts(gpus);
+}
+function renderCharts(gpus) {
+  if (!gpus.length) return;
+  const idx = document.getElementById('gpu-select').value;
+  const filtered = idx === '-1' ? gpus : gpus.filter(g => g.index == idx);
+  // GPU utilization bar chart
+  gpuChart.setOption({
+    tooltip: { trigger:'axis' },
+    xAxis: { type:'category', data: filtered.map(g => 'GPU '+g.index) },
+    yAxis: { type:'value', max:100, name:'%' },
+    series: [{ type:'bar', data: filtered.map(g => ({ value:g.utilization_gpu, itemStyle:{ color: g.utilization_gpu>80?'#ff4d4f':'#52c41a' }})), name:'GPU利用率' }, { type:'bar', data: filtered.map(g => ({ value:g.utilization_memory, itemStyle:{ color:'#1890ff' }})), name:'显存利用率' }],
+    legend: { data:['GPU利用率','显存利用率'] }
+  });
+  // Memory used bar
+  memChart.setOption({
+    tooltip: { trigger:'axis' },
+    xAxis: { type:'category', data: filtered.map(g => 'GPU '+g.index) },
+    yAxis: { type:'value', name:'MB' },
+    series: [{ type:'bar', data: filtered.map(g => g.memory_used), name:'已用显存', itemStyle:{color:'#fa8c16'} }, { type:'line', data: filtered.map(g => g.memory_total), name:'总显存', itemStyle:{color:'#999'} }],
+    legend: { data:['已用显存','总显存'] }
+  });
+  // Temp & power
+  tempChart.setOption({
+    tooltip: { trigger:'axis' },
+    xAxis: { type:'category', data: filtered.map(g => 'GPU '+g.index) },
+    yAxis: [ { type:'value', name:'温度(°C)', max:120 }, { type:'value', name:'功耗(W)', max:400 } ],
+    series: [
+      { type:'bar', data: filtered.map(g => g.temperature), name:'温度', itemStyle:{color:'#ff4d4f'}, yAxisIndex:0 },
+      { type:'bar', data: filtered.map(g => g.power_draw), name:'功耗', itemStyle:{color:'#722ed1'}, yAxisIndex:1 },
+      { type:'line', data: filtered.map(g => g.fan_speed), name:'风扇(%)', itemStyle:{color:'#13c2c2'}, yAxisIndex:0 }
+    ],
+    legend: { data:['温度','功耗','风扇(%)'] }
+  });
+}
+  </script>
+</body>
+</html>
