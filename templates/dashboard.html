@@ -83,22 +83,13 @@ async function refreshDashboard() {
         <td>${s.port || '-'}</td>
         <td>
           <div class="btn-group">
-            ${s.status === 'running'
-              ? `<button class="btn btn-sm btn-danger" onclick="doStop(${s.id})">停止</button>
-                 <a href="/config/${s.id}/log" class="btn btn-sm">日志</a>`
-              : `<button class="btn btn-sm btn-success" onclick="doStart(${s.id})">启动</button>`}
+            <button class="btn btn-sm btn-danger" onclick="doStop(${s.id})">停止</button>
+            <a href="/config/${s.id}/log" class="btn btn-sm">日志</a>
           </div>
         </td>
       </tr>
     `).join('');
  }).join('');
-}
-
-async function doStart(cid) {
-  const r = await api(`/api/runtime/${cid}/start`, {method:'POST'});
-  if (r.ok) toast('启动成功, PID: ' + r.pid, 'success');
-  else toast(r.error, 'error');
-  setTimeout(refreshDashboard, 1000);
 }
 
 async function doStop(cid) {
