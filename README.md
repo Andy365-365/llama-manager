@@ -2,6 +2,8 @@
 
 Web UI for managing [llama.cpp](https://github.com/ggerganov/llama.cpp) inference services — launch, monitor, and configure multiple instances from a single dashboard.
 
+English | [中文](README.zh.md)
+
 ## Features
 
 - **Workspace grouping** — organize configs into logical workspaces
