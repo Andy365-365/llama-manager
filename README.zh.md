@@ -73,7 +73,7 @@ llama-manager/
 │   ├── workspaces.html      # 工作空间管理
 │   ├── instances.html       # 推理框架管理
 │   ├── gpu.html             # GPU 监控页面
-│   └── models.html          # 模型扫描
+│   └── models.html          # 模型管理
 ├── static/
 │   ├── css/style.css        # 样式表
 │   └── js/app.js            # 通用 JS 工具函数

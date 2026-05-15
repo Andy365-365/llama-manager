@@ -71,9 +71,9 @@ llama-manager/
 │   ├── config_detail.html   # Config detail view
 │   ├── config_log.html      # Log viewer (SSE)
 │   ├── workspaces.html      # Workspace management
-│   ├── instances.html       # Instance management
+│   ├── instances.html       # Inference framework mgmt
 │   ├── gpu.html             # GPU monitoring page
-│   └── models.html          # Model scanner
+│   └── models.html          # Model management
 ├── static/
 │   ├── css/style.css        # Styles
 │   └── js/app.js            # Shared JS utilities
@@ -95,15 +95,15 @@ llama-manager/
 | GET | `/config/{cid}/log` | View logs |
 | GET | `/config/{cid}/gpu` | Config GPU monitoring |
 | GET | `/workspaces` | Workspace management |
-| GET | `/instances` | Instance management |
+| GET | `/instances` | Inference framework mgmt |
 | GET | `/gpu` | GPU monitoring |
-| GET | `/models` | Model scanner |
+| GET | `/models` | Model management |
 
 ### REST API
 | Method | Path | Description |
 |--------|------|-------------|
 | GET/POST | `/api/workspaces/` | Workspace CRUD |
-| GET/POST | `/api/instances/` | Instance management |
+| GET/POST | `/api/instances/` | Inference framework mgmt |
 | POST | `/api/instances/auto-detect` | Auto-detect llama.cpp |
 | GET/POST | `/api/configs/` | Config CRUD |
 | GET/PUT/DELETE | `/api/configs/{cid}` | Config operations |

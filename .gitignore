@@ -35,3 +35,5 @@ Thumbs.db
 
 # Data directory (user-specific)
 data/
+
+.git-credentials
