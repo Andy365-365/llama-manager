@@ -23,10 +23,11 @@ _gpu_collector_task: Optional[asyncio.Task] = None
 _GPU_COLLECT_INTERVAL = 5.0  # seconds
 
 
-async def _start_global_gpu_collector():
+def _start_global_gpu_collector():
     """Start global GPU metrics collection (runs until cancelled)."""
     global _gpu_collector_task
-    _gpu_collector_task = asyncio.create_task(_gpu_collect_loop())
+    loop = asyncio.get_event_loop()
+    _gpu_collector_task = loop.create_task(_gpu_collect_loop())
 
 
 async def _gpu_collect_loop():
@@ -39,7 +40,7 @@ async def _gpu_collect_loop():
         await asyncio.sleep(_GPU_COLLECT_INTERVAL)
 
 
-async def _stop_global_gpu_collector():
+def _stop_global_gpu_collector():
     """Stop global GPU collector."""
     global _gpu_collector_task
     if _gpu_collector_task:

@@ -181,9 +181,19 @@ function initChart() {
 
 async function loadGpuHistory() {
   try {
-    const url = `/api/runtime/gpu/history?minutes=${Math.ceil(currentTimeRange / 60)}&gpu_index=${currentGpu === 'all' ? 'null' : currentGpu}`;
+    const gpuParam = currentGpu === 'all' ? '' : `&gpu_index=${currentGpu}`;
+    const url = `/api/runtime/gpu/history?minutes=${Math.ceil(currentTimeRange / 60)}${gpuParam}`;
     const res = await fetch(url);
-    const data = await res.json();
+    const raw = await res.json();
+
+    // Backend returns flat list: [{timestamp, gpu_index, utilization_gpu, temperature, power_usage}, ...]
+    // Group by gpu_index
+    const byGpu = {};
+    for (const m of raw) {
+      const idx = m.gpu_index;
+      if (!byGpu[idx]) byGpu[idx] = [];
+      byGpu[idx].push(m);
+    }
 
     const series = [];
     const legendData = [];
@@ -193,9 +203,10 @@ async function loadGpuHistory() {
       : [parseInt(currentGpu)];
 
     for (const idx of gpuIndices) {
-      const utilData = (data.utilization[idx] || []).map(p => [new Date(p.timestamp * 1000), p.value]);
-      const tempData = (data.temperature[idx] || []).map(p => [new Date(p.timestamp * 1000), p.value]);
-      const powerData = (data.power[idx] || []).map(p => [new Date(p.timestamp * 1000), p.value]);
+      const points = byGpu[idx] || [];
+      const utilData = points.map(p => [new Date(p.timestamp), p.utilization_gpu]);
+      const tempData = points.map(p => [new Date(p.timestamp), p.temperature]);
+      const powerData = points.map(p => [new Date(p.timestamp), p.power_usage]);
 
       const label = gpuCount > 1 ? `GPU ${idx}` : '';
 
