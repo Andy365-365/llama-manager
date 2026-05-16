@@ -4,7 +4,7 @@
 function toast(msg, type = 'info') {
   const colors = { info: '#1890ff', success: '#52c41a', error: '#ff4d4f', warning: '#faad14' };
   const el = document.createElement('div');
-  el.style.cssText = `position:fixed;top:20px;right:20px;padding:12px 24px;border-radius:4px;background:${colors[type]};color:#fff;z-index:9999;font-size:14px;box-shadow:0 4px 12px rgba(0,0,0,0.15);transition:opacity 0.3s;`;
+  el.style.cssText = `position:fixed;top:60px;left:50%;transform:translateX(-50%);padding:10px 28px;border-radius:6px;background:${colors[type]};color:#fff;z-index:9999;font-size:14px;box-shadow:0 4px 12px rgba(0,0,0,0.15);transition:opacity 0.3s;white-space:nowrap;`;
   el.textContent = msg;
   document.body.appendChild(el);
   setTimeout(() => { el.style.opacity = '0'; setTimeout(() => el.remove(), 300); }, 3000);
