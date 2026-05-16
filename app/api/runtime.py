@@ -149,6 +149,29 @@ class ScanRequest(BaseModel):
     directories: Optional[list[str]] = None
 
 
+@router.get("/models/directories")
+def api_model_directories():
+    """List available directories for model scanning (with existence status)."""
+    candidates = [
+        os.path.expanduser("~/.cache/llama-cpp/models"),
+        os.path.expanduser("~/models"),
+        "/data/models",
+        "/data/llm",
+        "/models",
+        "/root/models",
+    ]
+    result = []
+    for d in candidates:
+        exists = os.path.isdir(d)
+        # Count .gguf files if exists
+        count = 0
+        if exists:
+            for root, _, files in os.walk(d):
+                count += sum(1 for f in files if f.endswith('.gguf'))
+        result.append({"path": d, "exists": exists, "model_count": count})
+    return result
+
+
 @router.post("/models/scan")
 def api_scan_models(body: Optional[ScanRequest] = None):
     dirs = body.directories if body else None
