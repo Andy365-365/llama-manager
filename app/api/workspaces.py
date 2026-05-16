@@ -90,11 +90,17 @@ def update_workspace(wid: int, body: WorkspaceUpdate):
 
 @router.delete("/{wid}")
 def delete_workspace(wid: int):
+    from app.database import Config, GpuMetric
     db = SessionLocal()
     try:
         w = db.query(Workspace).filter(Workspace.id == wid).first()
         if not w:
             return {"ok": False, "error": "Not found"}
+        # Explicitly delete configs and their metrics first
+        for c in w.configs:
+            db.query(GpuMetric).filter(GpuMetric.config_id == c.id).delete()
+            db.delete(c)
+        db.commit()
         db.delete(w)
         db.commit()
         return {"ok": True}

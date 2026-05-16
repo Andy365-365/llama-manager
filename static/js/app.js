@@ -20,7 +20,16 @@ async function api(url, options = {}) {
     if (resp.headers.get('content-type')?.includes('text/event-stream')) {
       return resp;
     }
-    return await resp.json();
+    const text = await resp.text();
+    try {
+      const json = JSON.parse(text);
+      return json;
+    } catch {
+      if (!resp.ok) {
+        return { ok: false, error: `HTTP ${resp.status}: ${text.slice(0, 200)}` };
+      }
+      return { ok: false, error: text };
+    }
   } catch (e) {
     toast('Network error: ' + e.message, 'error');
     return { ok: false, error: e.message };
