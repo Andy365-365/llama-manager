@@ -13,13 +13,11 @@
   .gpu-controls select { padding: 4px 10px; border: 1px solid #d9d9d9; border-radius: 4px; font-size: 13px; background: #fff; }
   .live-dot { width: 8px; height: 8px; border-radius: 50%; background: #52c41a; display: inline-block; margin-right: 6px; animation: pulse 2s infinite; }
   @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.4; } }
-  .live-status { font-size: 12px; color: #888; display: flex; align-items: center; }
 </style>
 {% endblock %}
 {% block content %}
 <h2>仪表盘</h2>
 
-<!-- GPU 实时监控 -->
 <div class="card">
   <div class="card-header">
     <span class="card-title"><span class="live-dot"></span>GPU 实时监控</span>
@@ -36,15 +34,10 @@
       </select>
     </div>
   </div>
-
-  <!-- GPU 信息列表 -->
   <div id="gpuInfoList" class="gpu-info-list"></div>
-
-  <!-- 图表 -->
   <div id="gpuChart" class="gpu-chart-container"></div>
 </div>
 
-<!-- 运行中的实例 -->
 <div class="card">
   <div class="card-header">
     <span class="card-title">运行中的实例</span>
@@ -53,13 +46,7 @@
   <table>
     <thead>
       <tr>
-        <th>名称</th>
-        <th>空间</th>
-        <th>推理框架</th>
-        <th>PID</th>
-        <th>端口</th>
-        <th>运行时长</th>
-        <th>操作</th>
+        <th>名称</th><th>空间</th><th>推理框架</th><th>PID</th><th>端口</th><th>运行时长</th><th>操作</th>
       </tr>
     </thead>
     <tbody id="runningTable">
@@ -70,34 +57,31 @@
 {% endblock %}
 {% block scripts %}
 <script>
-// ── State ──
 let chart = null;
 let currentGpu = 'all';
 let currentTimeRange = 1800;
 let gpuCount = 0;
 
-// Color palette for GPUs
+// In-memory: gpuData[idx] = { util: [], temp: [], power: [] }
+let gpuData = {};
+let lastTs = {};
+
 const COLORS = ['#5470c6', '#fac858', '#ee6666', '#73c0de', '#3ba272', '#fc8452'];
 
-// ── Init ──
 document.addEventListener('DOMContentLoaded', () => {
   initChart();
   loadGpuInfo();
   loadRunningConfigs();
-
-  // Auto refresh: GPU data every 10s, configs every 15s
-  setInterval(loadGpuHistory, 10000);
+  setInterval(fetchAndAppend, 10000);
   setInterval(loadRunningConfigs, 15000);
 });
 
-// ── GPU Info ──
 async function loadGpuInfo() {
   try {
     const res = await fetch('/api/runtime/gpu/info');
     const data = await res.json();
     gpuCount = data.count;
 
-    // Populate GPU filter
     const filter = document.getElementById('gpuFilter');
     for (let i = 0; i < gpuCount; i++) {
       const opt = document.createElement('option');
@@ -106,7 +90,6 @@ async function loadGpuInfo() {
       filter.appendChild(opt);
     }
 
-    // Populate GPU info list
     const list = document.getElementById('gpuInfoList');
     list.innerHTML = data.gpus.map(g => `
       <div class="gpu-info-item">
@@ -118,75 +101,23 @@ async function loadGpuInfo() {
         </span>
       </div>
     `).join('');
-  } catch (e) {
-    console.error('Failed to load GPU info:', e);
-  }
+  } catch (e) { console.error('GPU info error:', e); }
 }
 
-// ── ECharts ──
 function initChart() {
   chart = echarts.init(document.getElementById('gpuChart'));
-
-  chart.setOption({
-    tooltip: {
-      trigger: 'axis',
-      axisPointer: { type: 'cross' }
-    },
-    legend: {
-      data: [],
-      top: 0,
-      textStyle: { fontSize: 12 }
-    },
-    grid: { left: 60, right: 30, top: 40, bottom: 40 },
-    xAxis: {
-      type: 'time',
-      axisLabel: {
-        formatter: (v) => {
-          const d = new Date(v);
-          return d.getHours().toString().padStart(2, '0') + ':' + d.getMinutes().toString().padStart(2, '0');
-        }
-      }
-    },
-    yAxis: [
-      {
-        type: 'value',
-        name: '利用率 (%)',
-        min: 0,
-        max: 100,
-        position: 'left'
-      },
-      {
-        type: 'value',
-        name: '温度 (°C)',
-        min: 0,
-        max: 120,
-        position: 'right',
-        axisLine: { show: true, lineStyle: { color: COLORS[2] } },
-        axisLabel: { color: COLORS[2] }
-      },
-      {
-        type: 'value',
-        name: '功耗 (W)',
-        show: false
-      }
-    ],
-    series: []
-  });
-
-  loadGpuHistory();
-
-  // Resize handler
+  // Initial fetch will populate data and render
+  fetchAndAppend();
   window.addEventListener('resize', () => chart.resize());
 }
 
-async function loadGpuHistory() {
+async function fetchAndAppend() {
   try {
     const gpuParam = currentGpu === 'all' ? '' : `&gpu_index=${currentGpu}`;
     const url = `/api/runtime/gpu/history?minutes=${Math.ceil(currentTimeRange / 60)}${gpuParam}`;
     const res = await fetch(url);
     const raw = await res.json();
 
-    // Backend returns flat list: [{timestamp, gpu_index, utilization_gpu, temperature, power_usage}, ...]
     // Group by gpu_index
     const byGpu = {};
     for (const m of raw) {
@@ -195,78 +126,105 @@ async function loadGpuHistory() {
       byGpu[idx].push(m);
     }
 
-    const series = [];
-    const legendData = [];
-
-    const gpuIndices = currentGpu === 'all'
-      ? Array.from({ length: gpuCount }, (_, i) => i)
-      : [parseInt(currentGpu)];
-
-    for (const idx of gpuIndices) {
-      const points = byGpu[idx] || [];
-      const utilData = points.map(p => [new Date(p.timestamp), p.utilization_gpu]);
-      const tempData = points.map(p => [new Date(p.timestamp), p.temperature]);
-      const powerData = points.map(p => [new Date(p.timestamp), p.power_usage]);
-
-      const label = gpuCount > 1 ? `GPU ${idx}` : '';
-
-      series.push({
-        name: `${label}利用率`,
-        type: 'line',
-        smooth: true,
-        showSymbol: false,
-        data: utilData,
-        yAxisIndex: 0,
-        lineStyle: { width: 2 },
-        color: COLORS[idx % COLORS.length]
-      });
-
-      series.push({
-        name: `${label}温度`,
-        type: 'line',
-        smooth: true,
-        showSymbol: false,
-        data: tempData,
-        yAxisIndex: 1,
-        lineStyle: { width: 1.5, type: 'dashed' },
-        color: COLORS[(idx + 2) % COLORS.length]
-      });
-
-      if (gpuCount === 1) {
-        series.push({
-          name: `${label}功耗`,
-          type: 'line',
-          smooth: true,
-          showSymbol: false,
-          data: powerData,
-          yAxisIndex: 2,
-          lineStyle: { width: 1 },
-          color: COLORS[(idx + 4) % COLORS.length]
-        });
+    // Append new points to memory
+    for (const idx in byGpu) {
+      if (!gpuData[idx]) {
+        gpuData[idx] = { util: [], temp: [], power: [] };
       }
+      const pts = byGpu[idx];
+      const last = lastTs[idx] ? new Date(lastTs[idx]).getTime() : 0;
 
-      legendData.push(`${label}利用率`, `${label}温度`);
-      if (gpuCount === 1) legendData.push(`${label}功耗`);
+      for (const p of pts) {
+        const ts = new Date(p.timestamp).getTime();
+        if (ts > last) {
+          gpuData[idx].util.push([ts, p.utilization_gpu]);
+          gpuData[idx].temp.push([ts, p.temperature]);
+          gpuData[idx].power.push([ts, p.power_usage]);
+        }
+      }
+      if (pts.length > 0) {
+        lastTs[idx] = pts[pts.length - 1].timestamp;
+      }
     }
 
-    chart.setOption({
-      legend: { data: legendData },
-      series: series
-    }, { replaceMerge: ['series', 'legend'] });
+    renderChart();
+  } catch (e) { console.error('Fetch error:', e); }
+}
 
-  } catch (e) {
-    console.error('Failed to load GPU history:', e);
+function renderChart() {
+  const gpuIndices = currentGpu === 'all'
+    ? Array.from({ length: gpuCount }, (_, i) => i)
+    : [parseInt(currentGpu)];
+
+  const series = [];
+  const legendData = [];
+
+  for (const idx of gpuIndices) {
+    if (!gpuData[idx]) {
+      gpuData[idx] = { util: [], temp: [], power: [] };
+    }
+    const label = gpuCount > 1 ? `GPU ${idx}` : '';
+
+    series.push({
+      name: `${label}利用率`, type: 'line', smooth: true, showSymbol: false,
+      data: gpuData[idx].util, yAxisIndex: 0,
+      lineStyle: { width: 2 }, color: COLORS[idx % COLORS.length]
+    });
+    series.push({
+      name: `${label}温度`, type: 'line', smooth: true, showSymbol: false,
+      data: gpuData[idx].temp, yAxisIndex: 1,
+      lineStyle: { width: 1.5, type: 'dashed' }, color: COLORS[(idx + 2) % COLORS.length]
+    });
+    if (gpuCount === 1) {
+      series.push({
+        name: `${label}功耗`, type: 'line', smooth: true, showSymbol: false,
+        data: gpuData[idx].power, yAxisIndex: 2,
+        lineStyle: { width: 1 }, color: COLORS[(idx + 4) % COLORS.length]
+      });
+    }
+    legendData.push(`${label}利用率`, `${label}温度`);
+    if (gpuCount === 1) legendData.push(`${label}功耗`);
   }
+
+  const now = Date.now();
+  const windowMs = currentTimeRange * 1000;
+
+  chart.setOption({
+    tooltip: { trigger: 'axis', axisPointer: { type: 'cross' } },
+    legend: { data: legendData, top: 0, textStyle: { fontSize: 12 } },
+    grid: { left: 60, right: 30, top: 40, bottom: 40 },
+    xAxis: {
+      type: 'time',
+      min: now - windowMs,
+      max: now,
+      axisLabel: {
+        formatter: (v) => {
+          const d = new Date(v);
+          return d.getHours().toString().padStart(2, '0') + ':' + d.getMinutes().toString().padStart(2, '0');
+        }
+      }
+    },
+    yAxis: [
+      { type: 'value', name: '利用率 (%)', min: 0, max: 100, position: 'left' },
+      {
+        type: 'value', name: '温度 (°C)', min: 0, max: 120, position: 'right',
+        axisLine: { show: true, lineStyle: { color: COLORS[2] } },
+        axisLabel: { color: COLORS[2] }
+      },
+      { type: 'value', name: '功耗 (W)', show: false }
+    ],
+    series: series
+  });
 }
 
 function changeGpuFilter() {
   currentGpu = document.getElementById('gpuFilter').value;
-  loadGpuHistory();
+  renderChart();
 }
 
 function changeTimeRange() {
   currentTimeRange = parseInt(document.getElementById('timeRange').value);
-  loadGpuHistory();
+  renderChart();
 }
 
 // ── Running Configs ──
@@ -274,19 +232,13 @@ async function loadRunningConfigs() {
   try {
     const res = await fetch('/api/configs?status=running');
     const configs = await res.json();
-
     const tbody = document.getElementById('runningTable');
-
     if (!configs.length) {
       tbody.innerHTML = '<tr><td colspan="7" style="text-align:center;color:#999;padding:30px;">暂无运行中的实例</td></tr>';
       return;
     }
-
     tbody.innerHTML = configs.map(c => {
-      const uptime = c.started_at
-        ? getTimeDiff(new Date(c.started_at + 'Z'))
-        : '-';
-
+      const uptime = c.started_at ? getTimeDiff(new Date(c.started_at + 'Z')) : '-';
       return `<tr>
         <td><a href="/config/${c.id}">${esc(c.name)}</a></td>
         <td>${esc(c.workspace_name || '-')}</td>
@@ -294,18 +246,13 @@ async function loadRunningConfigs() {
         <td>${c.pid || '-'}</td>
         <td>${c.port || '-'}</td>
         <td>${uptime}</td>
-        <td>
-          <div class="btn-group">
-            <button class="btn btn-sm btn-danger" onclick="stopConfig(${c.id})">停止</button>
-            <a class="btn btn-sm" href="/config/${c.id}/log">日志</a>
-          </div>
-        </td>
+        <td><div class="btn-group">
+          <button class="btn btn-sm btn-danger" onclick="stopConfig(${c.id})">停止</button>
+          <a class="btn btn-sm" href="/config/${c.id}/log">日志</a>
+        </div></td>
       </tr>`;
     }).join('');
-
-  } catch (e) {
-    console.error('Failed to load configs:', e);
-  }
+  } catch (e) { console.error('Config error:', e); }
 }
 
 async function stopConfig(cid) {
@@ -313,9 +260,7 @@ async function stopConfig(cid) {
   try {
     await fetch(`/api/configs/${cid}/stop`, { method: 'POST' });
     setTimeout(loadRunningConfigs, 1000);
-  } catch (e) {
-    alert('停止失败: ' + e.message);
-  }
+  } catch (e) { alert('停止失败: ' + e.message); }
 }
 
 function getTimeDiff(start) {
