@@ -72,12 +72,14 @@ def _config_to_dict(c: Config) -> dict:
 
 
 @router.get("/")
-def list_configs(workspace_id: Optional[int] = None):
+def list_configs(workspace_id: Optional[int] = None, status: Optional[str] = None):
     db = SessionLocal()
     try:
         q = db.query(Config)
         if workspace_id:
             q = q.filter(Config.workspace_id == workspace_id)
+        if status:
+            q = q.filter(Config.status == status)
         configs = q.order_by(Config.updated_at.desc()).all()
         return [_config_to_dict(c) for c in configs]
     finally:

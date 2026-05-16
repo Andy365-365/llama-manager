@@ -65,7 +65,9 @@ def api_all_status():
             result.append({
                 "id": c.id, "name": c.name, "status": c.status,
                 "pid": c.pid, "port": c.port,
+                "started_at": c.started_at.isoformat() if c.started_at else None,
                 "workspace_name": c.workspace.name if c.workspace else "",
+                "llama_instance_name": c.llama_instance.name if c.llama_instance else "",
             })
         return result
     finally:

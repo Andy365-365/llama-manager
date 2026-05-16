@@ -230,14 +230,15 @@ function changeTimeRange() {
 // ── Running Configs ──
 async function loadRunningConfigs() {
   try {
-    const res = await fetch('/api/configs?status=running');
-    const configs = await res.json();
+    const res = await fetch('/api/runtime/status/all');
+    const all = await res.json();
+    const running = all.filter(c => c.status === 'running' && c.pid);
     const tbody = document.getElementById('runningTable');
-    if (!configs.length) {
+    if (!running.length) {
       tbody.innerHTML = '<tr><td colspan="7" style="text-align:center;color:#999;padding:30px;">暂无运行中的实例</td></tr>';
       return;
     }
-    tbody.innerHTML = configs.map(c => {
+    tbody.innerHTML = running.map(c => {
       const uptime = c.started_at ? getTimeDiff(new Date(c.started_at + 'Z')) : '-';
       return `<tr>
         <td><a href="/config/${c.id}">${esc(c.name)}</a></td>
