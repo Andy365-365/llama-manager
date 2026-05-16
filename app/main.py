@@ -22,10 +22,12 @@ BASE_DIR = os.path.dirname(os.path.dirname(__file__))
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     init_db()
-    # Start global GPU collector (independent of any config)
-    await _start_global_gpu_collector()
+    # Start global GPU collector (non-blocking)
+    _start_global_gpu_collector()
     yield
-    await _stop_global_gpu_collector()
+    # Stop on shutdown
+    _stop_global_gpu_collector()
+
 
 app = FastAPI(title="Llama.cpp Manager", lifespan=lifespan)
 app.mount("/static", StaticFiles(directory=os.path.join(BASE_DIR, "static")), name="static")

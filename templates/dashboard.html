@@ -3,257 +3,489 @@
 {% block head %}
 <script src="https://cdn.jsdelivr.net/npm/echarts@5/dist/echarts.min.js"></script>
 <style>
-  .gpu-chart-toolbar { display: flex; gap: 8px; align-items: center; margin-bottom: 12px; flex-wrap: wrap; }
-  .gpu-chart-toolbar label { font-size: 13px; color: #666; }
-  .gpu-chart-toolbar select { padding: 4px 10px; border: 1px solid #d9d9d9; border-radius: 4px; font-size: 13px; background: #fff; }
-  .gpu-chart-toolbar .status { margin-left: auto; font-size: 12px; color: #999; display: flex; align-items: center; gap: 6px; }
-  .gpu-chart-toolbar .status .dot { width: 8px; height: 8px; border-radius: 50%; display: inline-block; }
-  .gpu-chart-toolbar .status .dot.live { background: #52c41a; animation: pulse 2s infinite; }
-  .gpu-chart-toolbar .status .dot.off { background: #d9d9d9; animation: none; }
-  @keyframes pulse { 0%,100% { opacity: 1; } 50% { opacity: 0.4; } }
-  #gpu-chart { width: 100%; height: 380px; }
-  .running-empty { text-align: center; padding: 30px; color: #bbb; font-size: 14px; }
+  .gpu-info-bar {
+    display: flex; gap: 16px; flex-wrap: wrap;
+    padding: 10px 0; margin-bottom: 8px;
+    border-bottom: 1px solid #333;
+    font-size: 13px; color: #aaa;
+  }
+  .gpu-info-bar .gpu-item {
+    display: flex; align-items: center; gap: 6px;
+  }
+  .gpu-info-bar .gpu-name {
+    color: #e0e0e0; font-weight: 600;
+  }
+  .gpu-info-bar .gpu-detail {
+    color: #888;
+  }
+  .gpu-chart-tools {
+    display: flex; justify-content: space-between; align-items: center;
+    padding: 8px 0;
+  }
+  .gpu-chart-tools .left { display: flex; align-items: center; gap: 8px; }
+  .gpu-chart-tools .right { display: flex; align-items: center; gap: 8px; }
+  .gpu-chart-tools select {
+    background: #2a2a2a; color: #e0e0e0; border: 1px solid #444;
+    border-radius: 4px; padding: 4px 8px; font-size: 13px;
+  }
+  .gpu-chart-tools .live-dot {
+    width: 8px; height: 8px; border-radius: 50%; background: #4caf50;
+    animation: pulse 2s infinite;
+  }
+  @keyframes pulse {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.3; }
+  }
+  .gpu-chart-container {
+    width: 100%; height: 320px;
+    background: #1a1a1a; border-radius: 8px; padding: 8px;
+  }
+  .running-section {
+    margin-top: 24px;
+  }
+  .running-section h3 {
+    display: flex; align-items: center; gap: 8px;
+    margin-bottom: 12px; font-size: 16px; color: #e0e0e0;
+  }
+  .running-table {
+    width: 100%; border-collapse: collapse; font-size: 13px;
+  }
+  .running-table th {
+    text-align: left; padding: 8px 12px; background: #2a2a2a;
+    color: #aaa; font-weight: 500; border-bottom: 1px solid #444;
+  }
+  .running-table td {
+    padding: 8px 12px; border-bottom: 1px solid #333; color: #e0e0e0;
+  }
+  .running-table tr:hover td { background: #252525; }
+  .running-table .badge {
+    display: inline-block; padding: 2px 8px; border-radius: 4px;
+    font-size: 12px; font-weight: 500;
+  }
+  .running-table .badge-running { background: #1b5e20; color: #4caf50; }
+  .running-table .badge-stopped { background: #4a1a1a; color: #f44336; }
+  .running-table .btn-sm {
+    padding: 3px 10px; border-radius: 4px; border: none;
+    cursor: pointer; font-size: 12px; margin-right: 4px;
+  }
+  .running-table .btn-stop { background: #c62828; color: white; }
+  .running-table .btn-log { background: #1565c0; color: white; }
+  .running-table .btn-sm:hover { opacity: 0.8; }
+  .running-table .empty { text-align: center; color: #666; padding: 20px; }
 </style>
 {% endblock %}
 {% block content %}
-<h2 style="margin-bottom:20px;">仪表盘</h2>
-
-<!-- GPU Real-time Chart -->
-<div class="card">
-  <div class="card-header">
-    <span class="card-title">📈 GPU 实时监控</span>
-  </div>
-  <div class="gpu-chart-toolbar">
-    <label>时间范围:</label>
-    <select id="chart-range" onchange="fetchChartData()">
-      <option value="10">最近 10 分钟</option>
-      <option value="30" selected>最近 30 分钟</option>
-      <option value="60">最近 1 小时</option>
-      <option value="180">最近 3 小时</option>
-      <option value="1440">最近 24 小时</option>
-    </select>
-    <label>GPU:</label>
-    <select id="chart-gpu" onchange="fetchChartData()">
-      <option value="-1">全部 GPU</option>
-    </select>
-    <div class="status">
-      <span class="dot" id="live-dot"></span>
-      <span id="live-text">加载中...</span>
-    </div>
-  </div>
-  <div id="gpu-chart"></div>
+<div class="page-header">
+  <h2>仪表盘</h2>
 </div>
 
-<!-- Running Instances -->
+<!-- GPU 实时监控 -->
 <div class="card">
-  <div class="card-header">
-    <span class="card-title">🚀 运行中的实例</span>
+  <div class="card-header" style="display:flex;justify-content:space-between;align-items:center;">
+    <h3 style="margin:0;display:flex;align-items:center;gap:8px;">
+      GPU 实时监控 <span class="live-dot" id="liveDot"></span>
+    </h3>
   </div>
-  <table>
+  <div class="card-body">
+    <!-- GPU 信息栏 -->
+    <div class="gpu-info-bar" id="gpuInfoBar">
+      <span style="color:#666;">加载中...</span>
+    </div>
+
+    <!-- 工具栏 -->
+    <div class="gpu-chart-tools">
+      <div class="left">
+        <select id="gpuFilter" onchange="onGpuFilterChange()">
+          <option value="all">全部 GPU</option>
+        </select>
+      </div>
+      <div class="right">
+        <select id="timeRange" onchange="onTimeRangeChange()">
+          <option value="10">10 分钟</option>
+          <option value="30" selected>30 分钟</option>
+          <option value="60">1 小时</option>
+          <option value="180">3 小时</option>
+          <option value="1440">24 小时</option>
+        </select>
+      </div>
+    </div>
+
+    <!-- 图表 -->
+    <div class="gpu-chart-container" id="gpuChart"></div>
+  </div>
+</div>
+
+<!-- 运行中的实例 -->
+<div class="running-section">
+  <h3>运行中的实例</h3>
+  <table class="running-table">
     <thead>
-      <tr><th>名称</th><th>空间</th><th>推理框架</th><th>PID</th><th>端口</th><th>运行时长</th><th>操作</th></tr>
+      <tr>
+        <th>名称</th>
+        <th>空间</th>
+        <th>推理框架</th>
+        <th>PID</th>
+        <th>端口</th>
+        <th>运行时长</th>
+        <th>操作</th>
+      </tr>
     </thead>
-    <tbody id="running-table">
-      <tr><td colspan="7" class="loading">加载中...</td></tr>
+    <tbody id="runningBody">
+      <tr><td colspan="7" class="empty">加载中...</td></tr>
     </tbody>
   </table>
 </div>
-
 {% endblock %}
 {% block scripts %}
 <script>
+// ── State ──
 let chart = null;
-let gpuCount = 0;
-let refreshTimer = null;
+let gpuFilter = 'all';
+let timeRange = 30;
+let gpuIndices = [];
+let prevDataLen = 0;  // track data length for sliding
 
-async function init() {
-  // Get GPU info to populate selector
-  const gpu = await api('/api/runtime/gpu/info');
-  const gpus = gpu.gpus || [];
-  gpuCount = gpus.length;
+// ── GPU Info Bar ──
+function loadGpuInfo() {
+  fetch('/api/runtime/gpu/info')
+    .then(r => r.json())
+    .then(data => {
+      const bar = document.getElementById('gpuInfoBar');
+      if (!data.gpus || data.gpus.length === 0) {
+        bar.innerHTML = '<span style="color:#666;">未检测到 GPU</span>';
+        return;
+      }
+      gpuIndices = data.gpus.map(g => g.index);
+      // Populate filter dropdown
+      const filter = document.getElementById('gpuFilter');
+      data.gpus.forEach(g => {
+        const opt = document.createElement('option');
+        opt.value = g.index;
+        opt.textContent = `GPU ${g.index}`;
+        filter.appendChild(opt);
+      });
 
-  const sel = document.getElementById('chart-gpu');
-  sel.innerHTML = '<option value="-1">全部 GPU</option>' +
-    gpus.map(g => `<option value="${g.index}">GPU ${g.index}: ${g.name}</option>`).join('');
-
-  // Init chart
-  chart = echarts.init(document.getElementById('gpu-chart'));
-  window.addEventListener('resize', () => chart.resize());
-
-  // Load data
-  fetchChartData();
-  loadRunning();
-
-  // Auto-refresh: chart every 10s, running every 15s
-  setInterval(fetchChartData, 10000);
-  setInterval(loadRunning, 15000);
+      // Build info bar
+      bar.innerHTML = data.gpus.map(g => {
+        const driver = g.driver_version || '-';
+        const cuda = g.cuda_version || '-';
+        return `<div class="gpu-item">
+          <span class="gpu-name">GPU ${g.index}: ${g.name}</span>
+          <span class="gpu-detail">驱动 ${driver} / CUDA ${cuda}</span>
+        </div>`;
+      }).join('');
+    })
+    .catch(() => {});
 }
 
-async function fetchChartData() {
-  const minutes = parseInt(document.getElementById('chart-range').value);
-  const gpuVal = document.getElementById('chart-gpu').value;
-  const params = new URLSearchParams({ minutes: String(minutes) });
-  if (gpuVal !== '-1') params.set('gpu_index', gpuVal);
+// ── ECharts GPU Chart ──
+function initChart() {
+  chart = echarts.init(document.getElementById('gpuChart'));
 
-  const data = await api('/api/runtime/gpu/history?' + params.toString());
-  if (!data || !data.length) {
-    chart.setOption({ series: [] });
-    updateLiveStatus(false);
-    return;
-  }
-
-  updateLiveStatus(true);
-
-  const selectedGpu = gpuVal !== '-1' ? parseInt(gpuVal) : -1;
-  const gpuIndices = [...new Set(data.map(d => d.gpu_index))];
-
-  // Color palette per GPU
-  const colors = ['#5470c6', '#91cc75', '#fac858', '#ee6666', '#73c0de', '#3ba272'];
-
-  const series = [];
-
-  // ── GPU Utilization (%) ──
-  gpuIndices.forEach(idx => {
-    const pts = data.filter(d => d.gpu_index === idx).map(d => [new Date(d.timestamp), d.utilization_gpu]);
-    const label = gpuIndices.length === 1 ? 'GPU 利用率' : `GPU ${idx} 利用率`;
-    series.push({
-      name: label, type: 'line', data: pts, smooth: true, symbol: 'none',
-      lineStyle: { width: 2.5 },
-      itemStyle: { color: colors[idx % colors.length] },
-      areaStyle: { opacity: 0.08 },
-      yAxisIndex: 0,
-    });
-  });
-
-  // ── Temperature (°C) ──
-  gpuIndices.forEach(idx => {
-    const pts = data.filter(d => d.gpu_index === idx).map(d => [new Date(d.timestamp), d.temperature]);
-    const label = gpuIndices.length === 1 ? '温度' : `GPU ${idx} 温度`;
-    series.push({
-      name: label, type: 'line', data: pts, smooth: true, symbol: 'none',
-      lineStyle: { width: 2 },
-      itemStyle: { color: '#ee6666' },
-      yAxisIndex: 1,
-    });
-  });
-
-  // ── Power (W) ──
-  gpuIndices.forEach(idx => {
-    const pts = data.filter(d => d.gpu_index === idx).map(d => [new Date(d.timestamp), d.power_usage]);
-    const label = gpuIndices.length === 1 ? '功耗' : `GPU ${idx} 功耗`;
-    series.push({
-      name: label, type: 'line', data: pts, smooth: true, symbol: 'none',
-      lineStyle: { width: 2 },
-      itemStyle: { color: '#fac858' },
-      yAxisIndex: 2,
-    });
-  });
-
-  const option = {
+  chart.setOption({
     tooltip: {
       trigger: 'axis',
-      axisPointer: { type: 'cross' },
+      backgroundColor: '#2a2a2a',
+      borderColor: '#444',
+      textStyle: { color: '#e0e0e0', fontSize: 12 },
       formatter: function(params) {
-        let s = '<b>' + params[0].axisValueLabel + '</b><br>';
+        let html = `<b>${params[0].axisValue}</b><br/>`;
         params.forEach(p => {
-          const unit = p.seriesName.includes('利用率') ? '%' : p.seriesName.includes('温度') ? '°C' : 'W';
-          s += p.marker + ' ' + p.seriesName + ': <b>' + p.value[1].toFixed(1) + unit + '</b><br>';
+          const unit = p.seriesName === '利用率' ? '%' :
+                       p.seriesName === '温度' ? '°C' : 'W';
+          html += `${p.marker} <span style="color:${p.color}">${p.seriesName}</span>: ${p.value}${unit}<br/>`;
         });
-        return s;
+        return html;
       }
     },
     legend: {
-      data: series.map(s => s.name),
-      bottom: 0,
-      textStyle: { fontSize: 12 },
-      type: 'scroll',
+      data: [],
+      textStyle: { color: '#aaa', fontSize: 11 },
+      top: 0, right: 10
     },
-    grid: { left: 55, right: 55, top: 20, bottom: 55 },
+    grid: { left: 55, right: 55, top: 35, bottom: 30 },
     xAxis: {
-      type: 'time',
-      axisLabel: { formatter: '{HH}:{mm}', fontSize: 11 },
-      splitLine: { show: true, lineStyle: { type: 'dashed', color: '#f0f0f0' } },
+      type: 'category',
+      data: [],
+      axisLine: { lineStyle: { color: '#444' } },
+      axisLabel: { color: '#888', fontSize: 10, rotate: 30 },
+      splitLine: { show: false }
     },
     yAxis: [
       {
-        type: 'value', name: '利用率 (%)', position: 'left', offset: 0,
+        type: 'value', name: '利用率 %', nameTextStyle: { color: '#888', fontSize: 10 },
         min: 0, max: 100,
-        axisLabel: { formatter: '{value}%', fontSize: 11 },
-        splitLine: { lineStyle: { color: '#f5f5f5' } },
+        axisLine: { lineStyle: { color: '#444' } },
+        axisLabel: { color: '#888', fontSize: 10 },
+        splitLine: { lineStyle: { color: '#333' } }
       },
       {
-        type: 'value', name: '温度 (°C)', position: 'right', offset: 50,
-        axisLabel: { formatter: '{value}°C', fontSize: 11 },
-        splitLine: { show: false },
-      },
-      {
-        type: 'value', name: '功耗 (W)', position: 'right', offset: 100,
-        axisLabel: { formatter: '{value}W', fontSize: 11 },
-        splitLine: { show: false },
-      },
+        type: 'value', name: '温度 °C', nameTextStyle: { color: '#888', fontSize: 10 },
+        axisLine: { lineStyle: { color: '#444' } },
+        axisLabel: { color: '#888', fontSize: 10 },
+        splitLine: { show: false }
+      }
     ],
-    series: series,
-    dataZoom: [{ type: 'inside', xAxisIndex: 0, start: 0, end: 100 }],
-  };
+    series: [],
+    dataZoom: [{
+      type: 'inside',
+      xAxisIndex: 0,
+      start: 0, end: 100
+    }]
+  });
 
-  chart.setOption(option, { replaceMerge: ['series', 'yAxis', 'legend'] });
+  window.addEventListener('resize', () => chart.resize());
 }
 
-async function loadRunning() {
-  const status = await api('/api/runtime/status/all');
-  const running = status.filter(s => s.status === 'running');
-  const rt = document.getElementById('running-table');
+const GPU_COLORS = ['#4caf50', '#2196f3', '#ff9800', '#e91e63'];
 
-  if (running.length === 0) {
-    rt.innerHTML = '<tr><td colspan="7" class="running-empty">暂无运行中的实例</td></tr>';
-    return;
-  }
-
-  rt.innerHTML = running.map(s => {
-    const elapsed = s.started_at ? timeAgo(new Date(s.started_at)) : '-';
-    return `
-      <tr>
-        <td><a href="/config/${s.id}/edit">${esc(s.name)}</a></td>
-        <td>${esc(s.workspace_name)}</td>
-        <td>${esc(s.llama_instance_name || '-')}</td>
-        <td>${s.pid || '-'}</td>
-        <td>${s.port || '-'}</td>
-        <td style="color:#999;font-size:13px;">${elapsed}</td>
-        <td>
-          <div class="btn-group">
-            <button class="btn btn-sm btn-danger" onclick="doStop(${s.id})">停止</button>
-            <a href="/config/${s.id}/log" class="btn btn-sm">日志</a>
-          </div>
-        </td>
-      </tr>`;
-  }).join('');
+function buildSeriesKeys() {
+  const indices = gpuFilter === 'all' ? gpuIndices : [parseInt(gpuFilter)];
+  return indices.map(i => ({
+    index: i,
+    utilKey: `util_${i}`,
+    tempKey: `temp_${i}`,
+    powerKey: `power_${i}`,
+    color: GPU_COLORS[i % GPU_COLORS.length]
+  }));
 }
 
-async function doStop(cid) {
-  const r = await api(`/api/runtime/${cid}/stop`, { method: 'POST' });
-  if (r.ok) { toast('已停止', 'success'); loadRunning(); }
-  else toast(r.error, 'error');
+function loadGpuHistory() {
+  fetch(`/api/runtime/gpu/history?minutes=${timeRange}${gpuFilter !== 'all' ? '&gpu_index=' + gpuFilter : ''}`)
+    .then(r => r.json())
+    .then(data => {
+      if (!data || data.length === 0) return;
+
+      const keys = buildSeriesKeys();
+      const times = data.map(d => {
+        const dt = new Date(d.timestamp);
+        return dt.getHours().toString().padStart(2, '0') + ':' + dt.getMinutes().toString().padStart(2, '0') + ':' + dt.getSeconds().toString().padStart(2, '0');
+      });
+
+      // Build series data
+      const seriesData = {};
+      keys.forEach(k => {
+        seriesData[k.utilKey] = [];
+        seriesData[k.tempKey] = [];
+        seriesData[k.powerKey] = [];
+      });
+
+      data.forEach(d => {
+        const ki = keys.find(k => k.index === d.gpu_index);
+        if (ki) {
+          seriesData[ki.utilKey].push(d.utilization_gpu);
+          seriesData[ki.tempKey].push(d.temperature);
+          seriesData[ki.powerKey].push(d.power_usage);
+        }
+      });
+
+      // Legend
+      const legendData = [];
+      keys.forEach(k => {
+        legendData.push(`GPU ${k.index} 利用率`);
+        legendData.push(`GPU ${k.index} 温度`);
+        legendData.push(`GPU ${k.index} 功耗`);
+      });
+
+      const series = [];
+      keys.forEach(k => {
+        // Utilization - primary axis
+        series.push({
+          name: `GPU ${k.index} 利用率`,
+          type: 'line', smooth: true, symbol: 'none',
+          lineStyle: { width: 2 },
+          yAxisIndex: 0,
+          data: seriesData[k.utilKey],
+          itemStyle: { color: k.color }
+        });
+        // Temperature - secondary axis
+        series.push({
+          name: `GPU ${k.index} 温度`,
+          type: 'line', smooth: true, symbol: 'none',
+          lineStyle: { width: 1.5, type: 'dashed' },
+          yAxisIndex: 1,
+          data: seriesData[k.tempKey],
+          itemStyle: { color: k.color }
+        });
+        // Power - secondary axis
+        series.push({
+          name: `GPU ${k.index} 功耗`,
+          type: 'line', smooth: true, symbol: 'none',
+          lineStyle: { width: 1.5 },
+          yAxisIndex: 1,
+          data: seriesData[k.powerKey],
+          itemStyle: { color: k.color }
+        });
+      });
+
+      chart.setOption({
+        xAxis: { data: times },
+        legend: { data: legendData },
+        series: series
+      }, { replaceMerge: ['xAxis', 'legend', 'series'] });
+
+      prevDataLen = data.length;
+    })
+    .catch(() => {});
 }
 
-function updateLiveStatus(on) {
-  const dot = document.getElementById('live-dot');
-  const txt = document.getElementById('live-text');
-  dot.className = 'dot ' + (on ? 'live' : 'off');
-  txt.textContent = on ? '实时刷新中 (10s)' : '暂无数据';
+// Incremental refresh: only fetch new data points and append
+let lastTimestamp = '';
+function incrementalRefresh() {
+  fetch(`/api/runtime/gpu/history?minutes=${timeRange}${gpuFilter !== 'all' ? '&gpu_index=' + gpuFilter : ''}`)
+    .then(r => r.json())
+    .then(data => {
+      if (!data || data.length === 0) return;
+
+      // Find new data points (by comparing last timestamp)
+      const currentLast = data[data.length - 1].timestamp;
+      if (currentLast === lastTimestamp) return;  // no new data
+
+      // Find where new data starts
+      let newStart = 0;
+      for (let i = data.length - 1; i >= 0; i--) {
+        if (data[i].timestamp === lastTimestamp) {
+          newStart = i + 1;
+          break;
+        }
+        newStart = i;
+      }
+      // If we couldn't find the last timestamp, just append everything new by count
+      if (newStart === 0 && lastTimestamp) {
+        newStart = Math.max(0, data.length - (data.length - prevDataLen));
+      }
+
+      const newData = data.slice(newStart);
+      if (newData.length === 0) return;
+
+      const keys = buildSeriesKeys();
+
+      // New time labels
+      const newTimes = newData.map(d => {
+        const dt = new Date(d.timestamp);
+        return dt.getHours().toString().padStart(2, '0') + ':' + dt.getMinutes().toString().padStart(2, '0') + ':' + dt.getSeconds().toString().padStart(2, '0');
+      });
+
+      // Get current chart data and append
+      const opt = chart.getOption();
+      const currentX = opt.xAxis[0].data || [];
+
+      // Append new times
+      const updatedX = currentX.concat(newTimes);
+
+      // Sliding window: keep last N points based on time range
+      const maxPoints = Math.max(60, Math.ceil(timeRange * 12)); // ~12 points per minute (5s interval)
+      const finalX = updatedX.slice(-maxPoints);
+
+      // Update series data
+      const updatedSeries = opt.series.map((s, idx) => {
+        const currentData = s.data || [];
+        // Determine which key this series corresponds to
+        const keysList = keys.flatMap(k => [
+          { key: k.utilKey, name: `GPU ${k.index} 利用率` },
+          { key: k.tempKey, name: `GPU ${k.index} 温度` },
+          { key: k.powerKey, name: `GPU ${k.index} 功耗` }
+        ]);
+        const match = keysList.find(m => m.name === s.name);
+        if (!match) return s;
+
+        let newValues = [];
+        newData.forEach(d => {
+          const ki = keys.find(k => k.index === d.gpu_index);
+          if (!ki) return;
+          if (match.key === ki.utilKey) newValues.push(d.utilization_gpu);
+          else if (match.key === ki.tempKey) newValues.push(d.temperature);
+          else if (match.key === ki.powerKey) newValues.push(d.power_usage);
+        });
+
+        const updatedData = currentData.concat(newValues).slice(-maxPoints);
+        return { ...s, data: updatedData };
+      });
+
+      chart.setOption({
+        xAxis: { data: finalX },
+        series: updatedSeries
+      });
+
+      lastTimestamp = currentLast;
+      prevDataLen = finalX.length;
+    })
+    .catch(() => {});
 }
 
-function timeAgo(date) {
-  const diff = (Date.now() - date.getTime()) / 1000;
-  if (diff < 60) return Math.floor(diff) + ' 秒';
-  if (diff < 3600) return Math.floor(diff / 60) + ' 分钟';
-  if (diff < 86400) return Math.floor(diff / 3600) + ' 小时';
-  return Math.floor(diff / 86400) + ' 天';
+function onGpuFilterChange() {
+  gpuFilter = document.getElementById('gpuFilter').value;
+  lastTimestamp = '';
+  prevDataLen = 0;
+  loadGpuHistory();
 }
 
-function esc(s) {
-  return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+function onTimeRangeChange() {
+  timeRange = parseInt(document.getElementById('timeRange').value);
+  lastTimestamp = '';
+  prevDataLen = 0;
+  loadGpuHistory();
 }
 
-init();
+// ── Running Instances ──
+function loadRunningInstances() {
+  fetch('/api/runtime/status/all')
+    .then(r => r.json())
+    .then(data => {
+      const tbody = document.getElementById('runningBody');
+      const running = data.filter(d => d.status === 'running');
+      if (running.length === 0) {
+        tbody.innerHTML = '<tr><td colspan="7" class="empty">暂无运行中的实例</td></tr>';
+        return;
+      }
+      tbody.innerHTML = running.map(d => {
+        return `<tr>
+          <td>${d.name || '-'}</td>
+          <td>${d.workspace_name || '-'}</td>
+          <td>-</td>
+          <td>${d.pid || '-'}</td>
+          <td>${d.port || '-'}</td>
+          <td>-</td>
+          <td>
+            <button class="btn-sm btn-stop" onclick="stopConfig(${d.id})">停止</button>
+            <a href="/config/${d.id}/log" class="btn-sm btn-log" style="text-decoration:none;display:inline-block;">日志</a>
+          </td>
+        </tr>`;
+      }).join('');
+    })
+    .catch(() => {});
+}
+
+function stopConfig(cid) {
+  if (!confirm('确定停止此配置？')) return;
+  fetch(`/api/runtime/${cid}/stop`, { method: 'POST' })
+    .then(r => r.json())
+    .then(d => {
+      if (d.ok) {
+        showToast('已停止', 'success');
+        setTimeout(loadRunningInstances, 1000);
+      } else {
+        showToast(d.error || '失败', 'error');
+      }
+    })
+    .catch(() => showToast('网络错误', 'error'));
+}
+
+// ── Init ──
+document.addEventListener('DOMContentLoaded', () => {
+  loadGpuInfo();
+  initChart();
+  loadGpuHistory();
+  loadRunningInstances();
+
+  // Initial full load, then incremental
+  setTimeout(() => {
+    // Start incremental refresh every 6 seconds
+    setInterval(incrementalRefresh, 6000);
+  }, 3000);
+
+  // Refresh running instances every 15s
+  setInterval(loadRunningInstances, 15000);
+});
 </script>
 {% endblock %}

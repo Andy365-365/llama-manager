@@ -26,7 +26,11 @@ _GPU_COLLECT_INTERVAL = 5.0  # seconds
 async def _start_global_gpu_collector():
     """Start global GPU metrics collection (runs until cancelled)."""
     global _gpu_collector_task
-    _gpu_collector_task = asyncio.current_task()
+    _gpu_collector_task = asyncio.create_task(_gpu_collect_loop())
+
+
+async def _gpu_collect_loop():
+    """Inner loop for GPU collection."""
     while True:
         try:
             await asyncio.to_thread(_collect_gpu_snapshot_global)
@@ -40,10 +44,6 @@ async def _stop_global_gpu_collector():
     global _gpu_collector_task
     if _gpu_collector_task:
         _gpu_collector_task.cancel()
-        try:
-            await _gpu_collector_task
-        except asyncio.CancelledError:
-            pass
         _gpu_collector_task = None
 
 
@@ -339,7 +339,25 @@ def get_gpu_count() -> int:
 
 
 def get_gpu_info() -> list[dict]:
-    """Get current GPU info."""
+    """Get current GPU info with driver/CUDA version."""
+    # Get driver and CUDA version (system-wide, not per-GPU)
+    driver_version = ""
+    cuda_version = ""
+    try:
+        result = subprocess.run(
+            ["nvidia-smi", "--query-gpu=index,driver_version,compute_cap", "--format=csv,noheader"],
+            capture_output=True, text=True, timeout=10
+        )
+        if result.returncode == 0:
+            first_line = result.stdout.strip().split("\n")[0]
+            parts = [p.strip() for p in first_line.split(",")]
+            if len(parts) >= 2:
+                driver_version = parts[1]
+            if len(parts) >= 3:
+                cuda_version = parts[2]
+    except FileNotFoundError:
+        pass
+
     try:
         result = subprocess.run(
             [
@@ -372,6 +390,9 @@ def get_gpu_info() -> list[dict]:
                 })
             except (ValueError, IndexError):
                 continue
+        for g in gpus:
+            g["driver_version"] = driver_version
+            g["cuda_version"] = cuda_version
         return gpus
     except FileNotFoundError:
         return []
