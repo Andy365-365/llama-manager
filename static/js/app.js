@@ -31,21 +31,21 @@ async function api(url, options = {}) {
 function confirmDialog(msg) {
   return new Promise(resolve => {
     const overlay = document.createElement('div');
-    overlay.className = 'modal-overlay';
-    overlay.innerHTML = `
-      <div class="modal">
-        <div class="modal-header">
-          <span class="modal-title">确认</span>
-        </div>
-        <p style="margin-bottom:16px">${msg}</p>
-        <div style="text-align:right">
-          <button class="btn" id="confirm-no">取消</button>
-          <button class="btn btn-danger" id="confirm-yes" style="margin-left:8px">确定</button>
-        </div>
+    overlay.style.cssText = 'position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.45);z-index:9999;display:flex;align-items:center;justify-content:center;';
+    const box = document.createElement('div');
+    box.style.cssText = 'background:#fff;border-radius:8px;padding:24px;min-width:360px;box-shadow:0 4px 20px rgba(0,0,0,0.15);';
+    box.innerHTML = `
+      <div style="font-size:16px;font-weight:600;margin-bottom:16px;">确认</div>
+      <p style="margin-bottom:16px">${msg}</p>
+      <div style="text-align:right;display:flex;gap:8px;justify-content:flex-end;">
+        <button class="btn" id="confirm-no">取消</button>
+        <button class="btn btn-danger" id="confirm-yes">确定</button>
       </div>`;
+    overlay.appendChild(box);
     document.body.appendChild(overlay);
-    overlay.querySelector('#confirm-no').onclick = () => { overlay.remove(); resolve(false); };
-    overlay.querySelector('#confirm-yes').onclick = () => { overlay.remove(); resolve(true); };
+    box.querySelector('#confirm-no').onclick = () => { overlay.remove(); resolve(false); };
+    box.querySelector('#confirm-yes').onclick = () => { overlay.remove(); resolve(true); };
+    overlay.addEventListener('click', (e) => { if (e.target === overlay) { overlay.remove(); resolve(false); } });
   });
 }
 
