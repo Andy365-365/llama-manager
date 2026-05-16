@@ -3,56 +3,43 @@
 {% block head %}
 <script src="https://cdn.jsdelivr.net/npm/echarts@5/dist/echarts.min.js"></script>
 <style>
-  .gpu-mini-card { display: inline-flex; align-items: center; gap: 12px; padding: 8px 16px; border: 1px solid #f0f0f0; border-radius: 6px; margin: 4px; font-size: 13px; }
-  .gpu-mini-card .gpu-name { font-weight: 600; white-space: nowrap; }
-  .gpu-mini-card .gpu-metric { display: flex; align-items: center; gap: 4px; }
-  .gpu-mini-card .gpu-metric .val { font-weight: 600; }
-  .gpu-mini-card .gpu-metric .unit { color: #999; font-size: 11px; }
-  .gpu-util-high { color: #ff4d4f; }
-  .gpu-util-mid { color: #faad14; }
-  .gpu-util-low { color: #52c41a; }
-  #gpu-chart { width: 100%; height: 300px; }
-  .gpu-chart-toolbar { display: flex; gap: 8px; align-items: center; margin-bottom: 8px; }
-  .gpu-chart-toolbar select { padding: 4px 8px; border: 1px solid #d9d9d9; border-radius: 4px; font-size: 13px; }
+  .gpu-chart-toolbar { display: flex; gap: 8px; align-items: center; margin-bottom: 12px; flex-wrap: wrap; }
+  .gpu-chart-toolbar label { font-size: 13px; color: #666; }
+  .gpu-chart-toolbar select { padding: 4px 10px; border: 1px solid #d9d9d9; border-radius: 4px; font-size: 13px; background: #fff; }
+  .gpu-chart-toolbar .status { margin-left: auto; font-size: 12px; color: #999; display: flex; align-items: center; gap: 6px; }
+  .gpu-chart-toolbar .status .dot { width: 8px; height: 8px; border-radius: 50%; display: inline-block; }
+  .gpu-chart-toolbar .status .dot.live { background: #52c41a; animation: pulse 2s infinite; }
+  .gpu-chart-toolbar .status .dot.off { background: #d9d9d9; animation: none; }
+  @keyframes pulse { 0%,100% { opacity: 1; } 50% { opacity: 0.4; } }
+  #gpu-chart { width: 100%; height: 380px; }
+  .running-empty { text-align: center; padding: 30px; color: #bbb; font-size: 14px; }
 </style>
 {% endblock %}
 {% block content %}
 <h2 style="margin-bottom:20px;">仪表盘</h2>
 
-<div class="dash-grid" id="stats-grid">
-  <div class="dash-stat"><div class="value" id="stat-running">-</div><div class="label">运行中实例</div></div>
-  <div class="dash-stat"><div class="value" id="stat-gpus">-</div><div class="label">GPU 数量</div></div>
-  <div class="dash-stat"><div class="value" id="stat-gpu-util">-</div><div class="label">GPU 平均利用率</div></div>
-</div>
-
-<!-- GPU Quick Overview (compact) -->
-<div class="card">
-  <div class="card-header">
-    <span class="card-title">GPU 实时状态</span>
-    <button class="btn btn-sm" onclick="refreshDashboard()">🔄 刷新</button>
-  </div>
-  <div id="gpu-overview"></div>
-</div>
-
 <!-- GPU Real-time Chart -->
 <div class="card">
   <div class="card-header">
-    <span class="card-title">GPU 实时监控</span>
+    <span class="card-title">📈 GPU 实时监控</span>
   </div>
   <div class="gpu-chart-toolbar">
-    <label style="font-size:13px;">粒度:</label>
-    <select id="chart-range" onchange="updateChart()">
-      <option value="5">最近 5 分钟</option>
+    <label>时间范围:</label>
+    <select id="chart-range" onchange="fetchChartData()">
+      <option value="10">最近 10 分钟</option>
       <option value="30" selected>最近 30 分钟</option>
       <option value="60">最近 1 小时</option>
       <option value="180">最近 3 小时</option>
       <option value="1440">最近 24 小时</option>
     </select>
-    <label style="font-size:13px;margin-left:12px;">GPU:</label>
-    <select id="chart-gpu" onchange="updateChart()">
+    <label>GPU:</label>
+    <select id="chart-gpu" onchange="fetchChartData()">
       <option value="-1">全部 GPU</option>
     </select>
-    <button class="btn btn-sm" onclick="updateChart()" style="margin-left:auto;">🔄 刷新图表</button>
+    <div class="status">
+      <span class="dot" id="live-dot"></span>
+      <span id="live-text">加载中...</span>
+    </div>
   </div>
   <div id="gpu-chart"></div>
 </div>
@@ -60,14 +47,14 @@
 <!-- Running Instances -->
 <div class="card">
   <div class="card-header">
-    <span class="card-title">运行中的配置</span>
+    <span class="card-title">🚀 运行中的实例</span>
   </div>
   <table>
     <thead>
-      <tr><th>名称</th><th>空间</th><th>状态</th><th>PID</th><th>端口</th><th>操作</th></tr>
+      <tr><th>名称</th><th>空间</th><th>推理框架</th><th>PID</th><th>端口</th><th>运行时长</th><th>操作</th></tr>
     </thead>
     <tbody id="running-table">
-      <tr><td colspan="6" class="loading">加载中...</td></tr>
+      <tr><td colspan="7" class="loading">加载中...</td></tr>
     </tbody>
   </table>
 </div>
@@ -76,155 +63,89 @@
 {% block scripts %}
 <script>
 let chart = null;
+let gpuCount = 0;
+let refreshTimer = null;
 
-async function refreshDashboard() {
-  // GPU info
+async function init() {
+  // Get GPU info to populate selector
   const gpu = await api('/api/runtime/gpu/info');
   const gpus = gpu.gpus || [];
-  document.getElementById('stat-gpus').textContent = gpu.count || 0;
-  if (gpus.length) {
-    const avg = (gpus.reduce((s,g) => s + g.utilization_gpu, 0) / gpus.length).toFixed(1);
-    document.getElementById('stat-gpu-util').textContent = avg + '%';
-  }
+  gpuCount = gpus.length;
 
-  // GPU mini cards
-  const overview = document.getElementById('gpu-overview');
-  overview.innerHTML = gpus.map(g => {
-    const utilClass = g.utilization_gpu > 80 ? 'gpu-util-high' : g.utilization_gpu > 40 ? 'gpu-util-mid' : 'gpu-util-low';
-    return `
-    <div class="gpu-mini-card">
-      <span class="gpu-name">GPU ${g.index}</span>
-      <div class="gpu-metric">
-        <span class="val ${utilClass}">${g.utilization_gpu.toFixed(0)}%</span>
-      </div>
-      <div class="gpu-metric">
-        <span class="val">${g.memory_used.toFixed(0)}</span>
-        <span class="unit">/${g.memory_total.toFixed(0)} MB</span>
-      </div>
-      <div class="gpu-metric">
-        <span class="val">${g.temperature.toFixed(0)}°C</span>
-      </div>
-      <div class="gpu-metric">
-        <span class="val">${g.power_draw.toFixed(0)}W</span>
-      </div>
-    </div>`;
-  }).join('');
-
-  // Populate GPU selector
-  const gpuSelect = document.getElementById('chart-gpu');
-  const currentVal = gpuSelect.value;
-  gpuSelect.innerHTML = '<option value="-1">全部 GPU</option>' +
+  const sel = document.getElementById('chart-gpu');
+  sel.innerHTML = '<option value="-1">全部 GPU</option>' +
     gpus.map(g => `<option value="${g.index}">GPU ${g.index}: ${g.name}</option>`).join('');
-  gpuSelect.value = currentVal || '-1';
 
-  // Running status
-  const status = await api('/api/runtime/status/all');
-  const running = status.filter(s => s.status === 'running');
-  document.getElementById('stat-running').textContent = running.length;
+  // Init chart
+  chart = echarts.init(document.getElementById('gpu-chart'));
+  window.addEventListener('resize', () => chart.resize());
 
-  // Running table (only show running configs)
-  const rt = document.getElementById('running-table');
-  if (running.length === 0) {
-    rt.innerHTML = '<tr><td colspan="6" style="text-align:center;color:#999;">暂无运行中的配置</td></tr>';
-  } else {
-    rt.innerHTML = running.map(s => `
-      <tr>
-        <td><a href="/config/${s.id}/edit">${s.name}</a></td>
-        <td>${s.workspace_name}</td>
-        <td>${statusBadge(s.status)}</td>
-        <td>${s.pid || '-'}</td>
-        <td>${s.port || '-'}</td>
-        <td>
-          <div class="btn-group">
-            <button class="btn btn-sm btn-danger" onclick="doStop(${s.id})">停止</button>
-            <a href="/config/${s.id}/log" class="btn btn-sm">日志</a>
-          </div>
-        </td>
-      </tr>
-    `).join('');
-  }
+  // Load data
+  fetchChartData();
+  loadRunning();
 
-  // Update chart
-  updateChart();
+  // Auto-refresh: chart every 10s, running every 15s
+  setInterval(fetchChartData, 10000);
+  setInterval(loadRunning, 15000);
 }
 
-async function updateChart() {
+async function fetchChartData() {
   const minutes = parseInt(document.getElementById('chart-range').value);
-  const gpuIndex = document.getElementById('chart-gpu').value;
+  const gpuVal = document.getElementById('chart-gpu').value;
   const params = new URLSearchParams({ minutes: String(minutes) });
-  if (gpuIndex !== '-1') params.set('gpu_index', gpuIndex);
+  if (gpuVal !== '-1') params.set('gpu_index', gpuVal);
 
   const data = await api('/api/runtime/gpu/history?' + params.toString());
   if (!data || !data.length) {
-    if (chart) chart.clear();
+    chart.setOption({ series: [] });
+    updateLiveStatus(false);
     return;
   }
 
-  if (!chart) {
-    chart = echarts.init(document.getElementById('gpu-chart'));
-  }
+  updateLiveStatus(true);
 
-  // Parse timestamps
-  const times = data.map(d => new Date(d.timestamp));
-  const gpuIdx = gpuIndex !== '-1' ? parseInt(gpuIndex) : -1;
-
-  // Build series for each GPU in the data
+  const selectedGpu = gpuVal !== '-1' ? parseInt(gpuVal) : -1;
   const gpuIndices = [...new Set(data.map(d => d.gpu_index))];
 
-  const colorMap = {
-    0: '#5470c6',
-    1: '#91cc75',
-    2: '#fac858',
-    3: '#ee6666',
-    4: '#73c0de',
-    5: '#3ba272',
-  };
+  // Color palette per GPU
+  const colors = ['#5470c6', '#91cc75', '#fac858', '#ee6666', '#73c0de', '#3ba272'];
 
   const series = [];
 
-  // GPU utilization per GPU
+  // ── GPU Utilization (%) ──
   gpuIndices.forEach(idx => {
-    const filtered = data.filter(d => d.gpu_index === idx);
+    const pts = data.filter(d => d.gpu_index === idx).map(d => [new Date(d.timestamp), d.utilization_gpu]);
+    const label = gpuIndices.length === 1 ? 'GPU 利用率' : `GPU ${idx} 利用率`;
     series.push({
-      name: `GPU ${idx} 利用率`,
-      type: 'line',
-      data: filtered.map((d, i) => ({ value: [new Date(d.timestamp), d.utilization_gpu], name: d.timestamp })),
-      smooth: true,
-      symbol: 'none',
-      lineStyle: { width: 2 },
-      itemStyle: { color: colorMap[idx] || '#5470c6' },
+      name: label, type: 'line', data: pts, smooth: true, symbol: 'none',
+      lineStyle: { width: 2.5 },
+      itemStyle: { color: colors[idx % colors.length] },
+      areaStyle: { opacity: 0.08 },
       yAxisIndex: 0,
     });
   });
 
-  // Memory usage (MB) - use memory_used for first GPU if multiple
-  if (gpuIndices.length === 1) {
-    const idx = gpuIndices[0];
-    const filtered = data.filter(d => d.gpu_index === idx);
+  // ── Temperature (°C) ──
+  gpuIndices.forEach(idx => {
+    const pts = data.filter(d => d.gpu_index === idx).map(d => [new Date(d.timestamp), d.temperature]);
+    const label = gpuIndices.length === 1 ? '温度' : `GPU ${idx} 温度`;
     series.push({
-      name: `GPU ${idx} 显存 (MB)`,
-      type: 'line',
-      data: filtered.map(d => ({ value: [new Date(d.timestamp), d.memory_used], name: d.timestamp })),
-      smooth: true,
-      symbol: 'none',
-      lineStyle: { width: 1.5, type: 'dashed' },
+      name: label, type: 'line', data: pts, smooth: true, symbol: 'none',
+      lineStyle: { width: 2 },
       itemStyle: { color: '#ee6666' },
       yAxisIndex: 1,
     });
-  }
+  });
 
-  // Temperature
+  // ── Power (W) ──
   gpuIndices.forEach(idx => {
-    const filtered = data.filter(d => d.gpu_index === idx);
+    const pts = data.filter(d => d.gpu_index === idx).map(d => [new Date(d.timestamp), d.power_usage]);
+    const label = gpuIndices.length === 1 ? '功耗' : `GPU ${idx} 功耗`;
     series.push({
-      name: `GPU ${idx} 温度`,
-      type: 'line',
-      data: filtered.map(d => ({ value: [new Date(d.timestamp), d.temperature], name: d.timestamp })),
-      smooth: true,
-      symbol: 'none',
-      lineStyle: { width: 1.5, type: 'dotted' },
+      name: label, type: 'line', data: pts, smooth: true, symbol: 'none',
+      lineStyle: { width: 2 },
       itemStyle: { color: '#fac858' },
-      yAxisIndex: 1,
+      yAxisIndex: 2,
     });
   });
 
@@ -233,41 +154,106 @@ async function updateChart() {
       trigger: 'axis',
       axisPointer: { type: 'cross' },
       formatter: function(params) {
-        let s = params[0].axisValueLabel + '<br/>';
+        let s = '<b>' + params[0].axisValueLabel + '</b><br>';
         params.forEach(p => {
-          s += p.marker + p.seriesName + ': ' + p.value[1].toFixed(1) + (p.seriesName.includes('利用率') ? '%' : p.seriesName.includes('温度') ? '°C' : ' MB') + '<br/>';
+          const unit = p.seriesName.includes('利用率') ? '%' : p.seriesName.includes('温度') ? '°C' : 'W';
+          s += p.marker + ' ' + p.seriesName + ': <b>' + p.value[1].toFixed(1) + unit + '</b><br>';
         });
         return s;
       }
     },
-    legend: { data: series.map(s => s.name), bottom: 0 },
-    grid: { left: 60, right: 60, top: 30, bottom: 60 },
+    legend: {
+      data: series.map(s => s.name),
+      bottom: 0,
+      textStyle: { fontSize: 12 },
+      type: 'scroll',
+    },
+    grid: { left: 55, right: 55, top: 20, bottom: 55 },
     xAxis: {
       type: 'time',
-      axisLabel: { formatter: '{HH}:{mm}' }
+      axisLabel: { formatter: '{HH}:{mm}', fontSize: 11 },
+      splitLine: { show: true, lineStyle: { type: 'dashed', color: '#f0f0f0' } },
     },
     yAxis: [
-      { type: 'value', name: '利用率 (%)', min: 0, max: 100, position: 'left' },
-      { type: 'value', name: '显存/温度', position: 'right' }
+      {
+        type: 'value', name: '利用率 (%)', position: 'left', offset: 0,
+        min: 0, max: 100,
+        axisLabel: { formatter: '{value}%', fontSize: 11 },
+        splitLine: { lineStyle: { color: '#f5f5f5' } },
+      },
+      {
+        type: 'value', name: '温度 (°C)', position: 'right', offset: 50,
+        axisLabel: { formatter: '{value}°C', fontSize: 11 },
+        splitLine: { show: false },
+      },
+      {
+        type: 'value', name: '功耗 (W)', position: 'right', offset: 100,
+        axisLabel: { formatter: '{value}W', fontSize: 11 },
+        splitLine: { show: false },
+      },
     ],
     series: series,
-    dataZoom: [{ type: 'inside', xAxisIndex: 0, start: 0, end: 100 }]
+    dataZoom: [{ type: 'inside', xAxisIndex: 0, start: 0, end: 100 }],
   };
 
-  chart.setOption(option, true);
+  chart.setOption(option, { replaceMerge: ['series', 'yAxis', 'legend'] });
+}
+
+async function loadRunning() {
+  const status = await api('/api/runtime/status/all');
+  const running = status.filter(s => s.status === 'running');
+  const rt = document.getElementById('running-table');
+
+  if (running.length === 0) {
+    rt.innerHTML = '<tr><td colspan="7" class="running-empty">暂无运行中的实例</td></tr>';
+    return;
+  }
+
+  rt.innerHTML = running.map(s => {
+    const elapsed = s.started_at ? timeAgo(new Date(s.started_at)) : '-';
+    return `
+      <tr>
+        <td><a href="/config/${s.id}/edit">${esc(s.name)}</a></td>
+        <td>${esc(s.workspace_name)}</td>
+        <td>${esc(s.llama_instance_name || '-')}</td>
+        <td>${s.pid || '-'}</td>
+        <td>${s.port || '-'}</td>
+        <td style="color:#999;font-size:13px;">${elapsed}</td>
+        <td>
+          <div class="btn-group">
+            <button class="btn btn-sm btn-danger" onclick="doStop(${s.id})">停止</button>
+            <a href="/config/${s.id}/log" class="btn btn-sm">日志</a>
+          </div>
+        </td>
+      </tr>`;
+  }).join('');
 }
 
 async function doStop(cid) {
-  const r = await api(`/api/runtime/${cid}/stop`, {method:'POST'});
-  if (r.ok) toast('已停止', 'success');
+  const r = await api(`/api/runtime/${cid}/stop`, { method: 'POST' });
+  if (r.ok) { toast('已停止', 'success'); loadRunning(); }
   else toast(r.error, 'error');
-  setTimeout(refreshDashboard, 1000);
 }
 
-refreshDashboard();
-setInterval(refreshDashboard, 10000);
+function updateLiveStatus(on) {
+  const dot = document.getElementById('live-dot');
+  const txt = document.getElementById('live-text');
+  dot.className = 'dot ' + (on ? 'live' : 'off');
+  txt.textContent = on ? '实时刷新中 (10s)' : '暂无数据';
+}
 
-// Resize chart on window resize
-window.addEventListener('resize', () => { if (chart) chart.resize(); });
+function timeAgo(date) {
+  const diff = (Date.now() - date.getTime()) / 1000;
+  if (diff < 60) return Math.floor(diff) + ' 秒';
+  if (diff < 3600) return Math.floor(diff / 60) + ' 分钟';
+  if (diff < 86400) return Math.floor(diff / 3600) + ' 小时';
+  return Math.floor(diff / 86400) + ' 天';
+}
+
+function esc(s) {
+  return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+}
+
+init();
 </script>
 {% endblock %}
