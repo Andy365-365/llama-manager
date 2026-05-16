@@ -21,8 +21,35 @@ def list_workspaces():
     db = SessionLocal()
     try:
         ws = db.query(Workspace).order_by(Workspace.created_at.desc()).all()
-        return [{"id": w.id, "name": w.name, "description": w.description,
-                 "config_count": len(w.configs), "created_at": w.created_at.isoformat()} for w in ws]
+        result = []
+        for w in ws:
+            configs = []
+            for c in w.configs:
+                configs.append({
+                    "id": c.id,
+                    "name": c.name,
+                    "description": c.description,
+                    "status": c.status,
+                    "pid": c.pid,
+                    "port": c.port,
+                    "model_path": c.model_path,
+                    "llama_instance_name": c.llama_instance.name if c.llama_instance else "",
+                    "llama_instance_id": c.llama_instance_id,
+                    "workspace_id": c.workspace_id,
+                    "model_source": c.model_source,
+                    "ctx_size": c.ctx_size,
+                    "gpu_layers": c.gpu_layers,
+                    "parallel": c.parallel,
+                    "threads": c.threads,
+                    "tensor_split": c.tensor_split,
+                    "extra_args": c.extra_args,
+                })
+            result.append({
+                "id": w.id, "name": w.name, "description": w.description,
+                "config_count": len(configs), "created_at": w.created_at.isoformat(),
+                "configs": configs,
+            })
+        return result
     finally:
         db.close()
 

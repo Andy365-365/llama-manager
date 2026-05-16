@@ -1,10 +1,63 @@
 <!DOCTYPE html>
 <html lang="zh-CN">
 <head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>空间管理 - Llama Manager</title>
   <link rel="stylesheet" href="/static/css/style.css">
+  <style>
+    .ws-card { border: 1px solid #f0f0f0; border-radius: 8px; margin-bottom: 16px; overflow: hidden; }
+    .ws-header { display: flex; align-items: center; padding: 12px 20px; background: #fafafa; border-bottom: 1px solid #f0f0f0; cursor: pointer; }
+    .ws-header:hover { background: #f5f5f5; }
+    .ws-header .ws-name { font-weight: 600; font-size: 15px; flex: 1; }
+    .ws-header .ws-desc { font-size: 13px; color: #999; margin: 0 16px; }
+    .ws-header .ws-count { font-size: 13px; color: #666; margin-right: 12px; }
+    .ws-header .ws-arrow { transition: transform 0.2s; color: #999; }
+    .ws-header .ws-arrow.expanded { transform: rotate(90deg); }
+    .ws-body { display: none; padding: 0; }
+    .ws-body.show { display: block; }
+
+    .config-row { display: flex; align-items: center; padding: 10px 20px; border-bottom: 1px solid #f5f5f5; gap: 12px; }
+    .config-row:hover { background: #fafafa; }
+    .config-row:last-child { border-bottom: none; }
+    .config-name { flex: 1; font-weight: 500; }
+    .config-status { display: inline-block; padding: 2px 8px; border-radius: 3px; font-size: 12px; }
+    .config-status.running { background: #f6ffed; color: #52c41a; }
+    .config-status.stopped { background: #f5f5f5; color: #999; }
+    .config-instance { font-size: 12px; color: #999; width: 120px; }
+
+    .add-config-bar { padding: 12px 20px; background: #fffbe6; border-top: 1px dashed #f0f0f0; }
+    .add-config-bar .btn { font-size: 13px; }
+
+    .ws-actions { display: flex; gap: 6px; margin-left: 8px; }
+
+    /* Tooltip */
+    [data-tooltip] { position: relative; }
+    [data-tooltip]:hover::after {
+      content: attr(data-tooltip);
+      position: absolute; bottom: 100%; left: 50%; transform: translateX(-50%);
+      background: #333; color: #fff; padding: 4px 10px; border-radius: 4px;
+      font-size: 12px; white-space: nowrap; z-index: 100; pointer-events: none;
+      margin-bottom: 4px;
+    }
+    [data-tooltip]:hover::before {
+      content: '';
+      position: absolute; bottom: calc(100% - 2px); left: 50%; transform: translateX(-50%);
+      border: 4px solid transparent; border-top-color: #333; z-index: 100;
+      margin-bottom: 8px;
+    }
+
+    /* Modal */
+    .modal-overlay { display: none; position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.45); z-index: 1000; align-items: center; justify-content: center; }
+    .modal-overlay.show { display: flex; }
+    .modal-box { background: #fff; border-radius: 8px; padding: 24px; min-width: 500px; max-width: 700px; max-height: 85vh; overflow-y: auto; box-shadow: 0 4px 20px rgba(0,0,0,0.15); }
+    .modal-title { font-size: 16px; font-weight: 600; margin-bottom: 16px; }
+    .modal-actions { display: flex; gap: 8px; justify-content: flex-end; margin-top: 16px; padding-top: 16px; border-top: 1px solid #f0f0f0; }
+    .form-row { display: flex; gap: 12px; margin-bottom: 12px; align-items: flex-end; }
+    .form-group { flex: 1; }
+    .form-group label { display: block; font-size: 13px; color: #666; margin-bottom: 4px; }
+    .form-group input, .form-group select, .form-group textarea { width: 100%; padding: 6px 12px; border: 1px solid #d9d9d9; border-radius: 4px; font-size: 14px; box-sizing: border-box; }
+    .form-group textarea { min-height: 60px; resize: vertical; }
+  </style>
 </head>
 <body>
   <div class="layout">
@@ -21,68 +74,280 @@
     <main class="main">
       <div class="toolbar">
         <h2 style="margin:0;">空间管理</h2>
-        <button class="btn btn-primary" onclick="showCreateModal()">+ 新建空间</button>
+        <button class="btn btn-primary" onclick="showCreateWorkspace()">+ 新建空间</button>
       </div>
-      <div class="card">
-        <table>
-          <thead><tr><th>名称</th><th>描述</th><th>配置数</th><th>创建时间</th><th>操作</th></tr></thead>
-          <tbody id="ws-table"><tr><td colspan="5" class="loading">加载中...</td></tr></tbody>
-        </table>
-      </div>
-      <div id="ws-modal" style="display:none" class="modal-overlay">
-        <div class="modal">
-          <div class="modal-header">
-            <span class="modal-title" id="ws-modal-title">新建空间</span>
-            <button class="modal-close" onclick="document.getElementById('ws-modal').style.display='none'">&times;</button>
-          </div>
-          <input type="hidden" id="ws-edit-id">
-          <div class="form-group"><label>名称</label><input type="text" id="ws-name" placeholder="例如: 推理服务"></div>
-          <div class="form-group"><label>描述</label><textarea id="ws-desc" placeholder="可选描述"></textarea></div>
-          <div style="text-align:right">
-            <button class="btn" onclick="document.getElementById('ws-modal').style.display='none'">取消</button>
-            <button class="btn btn-primary" onclick="saveWorkspace()" style="margin-left:8px">保存</button>
-          </div>
-        </div>
-      </div>
+      <div id="ws-list">加载中...</div>
     </main>
   </div>
+
+  <!-- Workspace CRUD Modal -->
+  <div class="modal-overlay" id="ws-modal">
+    <div class="modal-box">
+      <div class="modal-title" id="ws-modal-title">新建空间</div>
+      <input type="hidden" id="ws-edit-id">
+      <div class="form-group">
+        <label>名称</label>
+        <input type="text" id="ws-name" placeholder="例如: 推理服务">
+      </div>
+      <div class="form-group" style="margin-top:12px;">
+        <label>描述</label>
+        <textarea id="ws-desc" placeholder="可选描述"></textarea>
+      </div>
+      <div class="modal-actions">
+        <button class="btn" onclick="closeModal('ws-modal')">取消</button>
+        <button class="btn btn-primary" onclick="saveWorkspace()">保存</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Config CRUD Modal -->
+  <div class="modal-overlay" id="cfg-modal">
+    <div class="modal-box" style="min-width:600px;max-width:750px;">
+      <div class="modal-title" id="cfg-modal-title">新建配置</div>
+      <input type="hidden" id="cfg-edit-id">
+      <input type="hidden" id="cfg-workspace-id">
+
+      <div class="form-row">
+        <div class="form-group">
+          <label data-tooltip="配置名称，用于标识">名称</label>
+          <input type="text" id="cfg-name" placeholder="例如: Llama3-8B">
+        </div>
+        <div class="form-group" style="flex:0.5;">
+          <label data-tooltip="所属推理框架">推理框架</label>
+          <select id="cfg-instance"></select>
+        </div>
+      </div>
+      <div class="form-group" style="margin-top:12px;">
+        <label data-tooltip="配置描述">描述</label>
+        <input type="text" id="cfg-desc" placeholder="可选描述">
+      </div>
+      <div class="form-row" style="margin-top:12px;">
+        <div class="form-group">
+          <label data-tooltip="模型文件路径或 HuggingFace ID">模型路径</label>
+          <input type="text" id="cfg-model-path" placeholder="/path/to/model.gguf">
+        </div>
+        <div class="form-group" style="flex:0.4;">
+          <label data-tooltip="本地文件(hf)或 HuggingFace(path)">来源</label>
+          <select id="cfg-model-source">
+            <option value="path">本地文件</option>
+            <option value="hf">HuggingFace</option>
+          </select>
+        </div>
+      </div>
+      <div class="form-row" style="margin-top:12px;">
+        <div class="form-group">
+          <label data-tooltip="上下文窗口大小">上下文大小</label>
+          <input type="number" id="cfg-ctx-size" placeholder="4096">
+        </div>
+        <div class="form-group">
+          <label data-tooltip="加载到 GPU 的层数 (-1 为全部)">GPU 层数</label>
+          <input type="number" id="cfg-gpu-layers" placeholder="99">
+        </div>
+        <div class="form-group">
+          <label data-tooltip="服务端口号">端口</label>
+          <input type="number" id="cfg-port" placeholder="8080">
+        </div>
+      </div>
+      <div class="form-row" style="margin-top:12px;">
+        <div class="form-group">
+          <label data-tooltip="并行请求数">并行数</label>
+          <input type="number" id="cfg-parallel" placeholder="4">
+        </div>
+        <div class="form-group">
+          <label data-tooltip="CPU 线程数">线程数</label>
+          <input type="number" id="cfg-threads" placeholder="8">
+        </div>
+        <div class="form-group">
+          <label data-tooltip="多卡负载均衡比例，如 1,1">Tensor Split</label>
+          <input type="text" id="cfg-tensor-split" placeholder="1,1">
+        </div>
+      </div>
+      <div class="form-group" style="margin-top:12px;">
+        <label data-tooltip="额外启动参数，空格分隔">额外参数</label>
+        <input type="text" id="cfg-extra" placeholder="--flash-attn true --mlock">
+      </div>
+      <div class="modal-actions">
+        <button class="btn" onclick="closeModal('cfg-modal')">取消</button>
+        <button class="btn btn-primary" onclick="saveConfig()">保存</button>
+      </div>
+    </div>
+  </div>
+
   <script src="/static/js/app.js"></script>
   <script>
-async function loadWorkspaces() {
-  const data = await api('/api/workspaces/');
-  const tb = document.getElementById('ws-table');
-  if (!data.length) { tb.innerHTML = '<tr><td colspan="5" style="text-align:center;color:#999;">暂无空间</td></tr>'; return; }
-  tb.innerHTML = data.map(w => '<tr><td><b>' + w.name + '</b></td><td>' + (w.description||'-') + '</td><td>' + w.config_count + '</td><td>' + new Date(w.created_at).toLocaleString() + '</td><td><div class="btn-group"><button class="btn btn-sm" onclick="editWorkspace(' + w.id + ',\'' + w.name.replace(/'/g,"\\'") + '\')">编辑</button><button class="btn btn-sm btn-danger" onclick="deleteWorkspace(' + w.id + ',\'' + w.name.replace(/'/g,"\\'") + '\')">删除</button></div></td></tr>').join('');
+let allWorkspaces = [];
+let allInstances = [];
+let expandedWs = new Set();
+
+// ── Load ─────────────────────────────────────────────────────
+async function loadAll() {
+  [allWorkspaces, allInstances] = await Promise.all([
+    api('/api/workspaces/'),
+    api('/api/instances/'),
+  ]);
+  renderWorkspaces();
 }
-function showCreateModal() {
+
+function renderWorkspaces() {
+  const el = document.getElementById('ws-list');
+  if (!allWorkspaces.length) {
+    el.innerHTML = '<div style="text-align:center;color:#999;padding:40px;">暂无空间，点击"新建空间"开始</div>';
+    return;
+  }
+
+  el.innerHTML = allWorkspaces.map(w => {
+    const isExpanded = expandedWs.has(w.id);
+    const configs = w.configs || [];
+    return `
+    <div class="ws-card">
+      <div class="ws-header" onclick="toggleWs(${w.id})">
+        <span class="ws-arrow ${isExpanded ? 'expanded' : ''}">▶</span>
+        <span class="ws-name">${esc(w.name)}</span>
+        ${w.description ? `<span class="ws-desc">${esc(w.description)}</span>` : ''}
+        <span class="ws-count">${configs.length} 个配置</span>
+        <div class="ws-actions" onclick="event.stopPropagation()">
+          <button class="btn btn-sm" onclick="showCreateConfig(${w.id})">+ 配置</button>
+          <button class="btn btn-sm" onclick="editWorkspace(${w.id})">编辑</button>
+          <button class="btn btn-sm btn-danger" onclick="deleteWorkspace(${w.id})">删除</button>
+        </div>
+      </div>
+      <div class="ws-body ${isExpanded ? 'show' : ''}">
+        ${configs.length === 0
+          ? '<div style="padding:20px;text-align:center;color:#999;">暂无配置</div>'
+          : configs.map(c => `
+              <div class="config-row">
+                <span class="config-name"><a href="/config/${c.id}/edit" onclick="event.stopPropagation()">${esc(c.name)}</a></span>
+                <span class="config-status ${c.status}">${c.status === 'running' ? '● 运行中' : '○ 已停止'}</span>
+                <span class="config-instance">${esc(c.llama_instance_name || '-')}</span>
+                <span style="font-size:12px;color:#999;">端口: ${c.port || '-'}</span>
+                <div class="ws-actions">
+                  <a href="/config/${c.id}/edit" class="btn btn-sm" onclick="event.stopPropagation()">编辑</a>
+                  <a href="/config/${c.id}/log" class="btn btn-sm" onclick="event.stopPropagation()">日志</a>
+                  <button class="btn btn-sm btn-danger" onclick="event.stopPropagation();deleteConfig(${c.id},'${esc(c.name)}')">删除</button>
+                </div>
+              </div>
+            `).join('')
+        }
+        <div class="add-config-bar">
+          <button class="btn btn-sm" onclick="showCreateConfig(${w.id})">+ 新建配置</button>
+        </div>
+      </div>
+    </div>`;
+  }).join('');
+}
+
+function toggleWs(id) {
+  if (expandedWs.has(id)) expandedWs.delete(id);
+  else expandedWs.add(id);
+  renderWorkspaces();
+}
+
+// ── Workspace CRUD ───────────────────────────────────────────
+function showCreateWorkspace() {
   document.getElementById('ws-modal-title').textContent = '新建空间';
   document.getElementById('ws-edit-id').value = '';
   document.getElementById('ws-name').value = '';
   document.getElementById('ws-desc').value = '';
-  document.getElementById('ws-modal').style.display = 'flex';
+  openModal('ws-modal');
 }
-function editWorkspace(id, name) {
+
+function editWorkspace(id) {
+  const w = allWorkspaces.find(x => x.id === id);
+  if (!w) return;
   document.getElementById('ws-modal-title').textContent = '编辑空间';
   document.getElementById('ws-edit-id').value = id;
-  document.getElementById('ws-name').value = name;
-  document.getElementById('ws-modal').style.display = 'flex';
+  document.getElementById('ws-name').value = w.name;
+  document.getElementById('ws-desc').value = w.description || '';
+  openModal('ws-modal');
 }
+
 async function saveWorkspace() {
   const id = document.getElementById('ws-edit-id').value;
   const name = document.getElementById('ws-name').value.trim();
   const desc = document.getElementById('ws-desc').value.trim();
   if (!name) { toast('请输入名称', 'warning'); return; }
   const body = { name, description: desc };
-  const r = id ? await api('/api/workspaces/' + id, { method:'PUT', body: JSON.stringify(body) }) : await api('/api/workspaces/', { method:'POST', body: JSON.stringify(body) });
-  if (r.ok) { toast('保存成功', 'success'); document.getElementById('ws-modal').style.display = 'none'; loadWorkspaces(); }
+  const r = id ? await api('/api/workspaces/' + id, { method:'PUT', body: JSON.stringify(body) })
+               : await api('/api/workspaces/', { method:'POST', body: JSON.stringify(body) });
+  if (r.ok) { toast('保存成功', 'success'); closeModal('ws-modal'); loadAll(); }
   else toast(r.error, 'error');
 }
-async function deleteWorkspace(id, name) {
-  if (!await confirmDialog('确定删除空间 "' + name + '" 吗？')) return;
+
+async function deleteWorkspace(id) {
+  const w = allWorkspaces.find(x => x.id === id);
+  if (!await confirmDialog('确定删除空间 "' + w.name + '" 吗？')) return;
   const r = await api('/api/workspaces/' + id, { method:'DELETE' });
-  if (r.ok) { toast('已删除', 'success'); loadWorkspaces(); } else toast(r.error, 'error');
+  if (r.ok) { toast('已删除', 'success'); loadAll(); } else toast(r.error, 'error');
 }
-loadWorkspaces();
+
+// ── Config CRUD ──────────────────────────────────────────────
+function showCreateConfig(workspaceId) {
+  document.getElementById('cfg-modal-title').textContent = '新建配置';
+  document.getElementById('cfg-edit-id').value = '';
+  document.getElementById('cfg-workspace-id').value = workspaceId;
+  document.getElementById('cfg-name').value = '';
+  document.getElementById('cfg-desc').value = '';
+  document.getElementById('cfg-model-path').value = '';
+  document.getElementById('cfg-model-source').value = 'path';
+  document.getElementById('cfg-ctx-size').value = '';
+  document.getElementById('cfg-gpu-layers').value = '';
+  document.getElementById('cfg-port').value = '';
+  document.getElementById('cfg-parallel').value = '';
+  document.getElementById('cfg-threads').value = '';
+  document.getElementById('cfg-tensor-split').value = '';
+  document.getElementById('cfg-extra').value = '';
+
+  // Populate instance selector
+  const sel = document.getElementById('cfg-instance');
+  sel.innerHTML = allInstances.map(i => `<option value="${i.id}">${esc(i.name)} (${i.server_binary})</option>`).join('');
+
+  // Expand the workspace
+  if (!expandedWs.has(workspaceId)) expandedWs.add(workspaceId);
+  renderWorkspaces();
+  openModal('cfg-modal');
+}
+
+async function saveConfig() {
+  const id = document.getElementById('cfg-edit-id').value;
+  const workspaceId = parseInt(document.getElementById('cfg-workspace-id').value);
+  const instanceId = parseInt(document.getElementById('cfg-instance').value);
+  const name = document.getElementById('cfg-name').value.trim();
+  if (!name) { toast('请输入配置名称', 'warning'); return; }
+
+  const body = {
+    workspace_id: workspaceId,
+    llama_instance_id: instanceId,
+    name,
+    description: document.getElementById('cfg-desc').value.trim(),
+    model_source: document.getElementById('cfg-model-source').value,
+    model_path: document.getElementById('cfg-model-path').value.trim(),
+    ctx_size: parseInt(document.getElementById('cfg-ctx-size').value) || null,
+    gpu_layers: parseInt(document.getElementById('cfg-gpu-layers').value) || null,
+    port: parseInt(document.getElementById('cfg-port').value) || null,
+    parallel: parseInt(document.getElementById('cfg-parallel').value) || null,
+    threads: parseInt(document.getElementById('cfg-threads').value) || null,
+    tensor_split: document.getElementById('cfg-tensor-split').value.trim() || null,
+    extra_args: document.getElementById('cfg-extra').value.trim(),
+  };
+
+  const r = id ? await api('/api/configs/' + id, { method:'PUT', body: JSON.stringify(body) })
+               : await api('/api/configs/', { method:'POST', body: JSON.stringify(body) });
+  if (r.ok) { toast('保存成功', 'success'); closeModal('cfg-modal'); loadAll(); }
+  else toast(r.error, 'error');
+}
+
+async function deleteConfig(id, name) {
+  if (!await confirmDialog('确定删除配置 "' + name + '" 吗？')) return;
+  const r = await api('/api/configs/' + id, { method:'DELETE' });
+  if (r.ok) { toast('已删除', 'success'); loadAll(); } else toast(r.error, 'error');
+}
+
+// ── Helpers ──────────────────────────────────────────────────
+function openModal(id) { document.getElementById(id).classList.add('show'); }
+function closeModal(id) { document.getElementById(id).classList.remove('show'); }
+function esc(s) { return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
+
+loadAll();
   </script>
 </body>
 </html>
