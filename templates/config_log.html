@@ -4,6 +4,15 @@
   <meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>日志 - Llama Manager</title>
   <link rel="stylesheet" href="/static/css/style.css">
+  <style>
+    .log-container { font-family: 'Courier New', monospace; font-size: 13px; line-height: 1.6; padding: 12px; background: #1e1e1e; color: #d4d4d4; border-radius: 4px; min-height: 200px; max-height: 70vh; overflow-y: auto; white-space: pre-wrap; word-break: break-all; }
+    .log-container .new-line { background: #2d2d2d; color: #4ec9b0; }
+    .log-toolbar { display: flex; gap: 8px; align-items: center; margin-bottom: 12px; flex-wrap: wrap; }
+    .follow-btn { display: inline-flex; align-items: center; gap: 4px; }
+    .follow-btn.active { color: #52c41a; }
+    .follow-btn.inactive { color: #999; }
+    .log-stats { margin-left: auto; font-size: 12px; color: #999; }
+  </style>
 </head>
 <body>
   <div class="layout">
@@ -22,22 +31,48 @@
         <h2 style="margin:0;">日志查看</h2>
         <div class="btn-group">
           <button class="btn" onclick="location.href='/dashboard'">← 返回</button>
-          <button class="btn" onclick="loadTail()">🔄 刷新</button>
         </div>
       </div>
       <div class="card">
+        <!-- Search bar -->
         <div class="form-row" style="margin-bottom:12px">
-          <div class="form-group" style="flex:1"><input type="text" id="log-search" placeholder="搜索日志内容..."></div>
+          <div class="form-group" style="flex:1"><input type="text" id="log-search" placeholder="搜索日志内容..." onkeydown="if(event.key==='Enter')searchLog()"></div>
           <button class="btn" onclick="searchLog()">🔍 搜索</button>
         </div>
+
+        <!-- Tabs -->
         <div class="tabs">
           <div class="tab active" onclick="switchTab('tail')">最近日志</div>
-          <div class="tab" onclick="switchTab('stream')">实时流</div>
+          <div class="tab" onclick="switchTab('stream')">实时流 (tail -f)</div>
           <div class="tab" onclick="switchTab('search')">搜索结果</div>
         </div>
-        <div id="tab-tail" class="tab-content active"><div class="log-container" id="log-tail">加载中...</div></div>
-        <div id="tab-stream" class="tab-content"><div class="log-container" id="log-stream">点击"实时流"标签开始...</div></div>
-        <div id="tab-search" class="tab-content"><div class="log-container" id="log-search-result">请先搜索</div></div>
+
+        <!-- Tail tab -->
+        <div id="tab-tail" class="tab-content active">
+          <div class="log-toolbar">
+            <button class="btn btn-sm" onclick="loadTail()">🔄 刷新</button>
+            <span class="log-stats" id="tail-stats"></span>
+          </div>
+          <div class="log-container" id="log-tail">加载中...</div>
+        </div>
+
+        <!-- Stream tab (tail -f) -->
+        <div id="tab-stream" class="tab-content">
+          <div class="log-toolbar">
+            <button class="follow-btn btn btn-sm active" id="follow-btn" onclick="toggleFollow()">
+              <span id="follow-icon">⬇</span> <span id="follow-text">自动跟随</span>
+            </button>
+            <button class="btn btn-sm" onclick="clearStream()">🗑 清空</button>
+            <button class="btn btn-sm" onclick="restartStream()">🔄 重连</button>
+            <span class="log-stats" id="stream-stats"></span>
+          </div>
+          <div class="log-container" id="log-stream">连接中...</div>
+        </div>
+
+        <!-- Search tab -->
+        <div id="tab-search" class="tab-content">
+          <div class="log-container" id="log-search-result">请先搜索</div>
+        </div>
       </div>
     </main>
   </div>
@@ -45,21 +80,11 @@
   <script>
 const CID = {{ cid }};
 let streamActive = false;
+let followMode = true;  // tail -f auto-scroll by default
+let streamLineCount = 0;
+let userScrolledUp = false;
 
-async function loadTail() {
-  const r = await api('/api/runtime/' + CID + '/log/tail?lines=200');
-  document.getElementById('log-tail').textContent = r.log || '暂无日志';
-  scrollToBottom('log-tail');
-}
-
-async function searchLog() {
-  const pattern = document.getElementById('log-search').value.trim();
-  if (!pattern) { toast('请输入搜索内容', 'warning'); return; }
-  const r = await api('/api/runtime/' + CID + '/log/search', { method:'POST', body: JSON.stringify({ pattern }) });
-  document.getElementById('log-search-result').textContent = r.result || '无结果';
-  switchTab('search');
-}
-
+// ── Tab switching ──────────────────────────────────────────
 function switchTab(name) {
   document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
   document.querySelectorAll('.tab-content').forEach(t => t.classList.remove('active'));
@@ -69,28 +94,141 @@ function switchTab(name) {
   if (name !== 'stream') stopStream();
 }
 
+// ── Tail (recent logs) ─────────────────────────────────────
+async function loadTail() {
+  const r = await api('/api/runtime/' + CID + '/log/tail?lines=500');
+  const el = document.getElementById('log-tail');
+  el.textContent = r.log || '暂无日志';
+  const lines = (r.log || '').split('\n').length;
+  document.getElementById('tail-stats').textContent = lines + ' 行';
+  scrollToBottom('log-tail');
+}
+
+// ── Search ─────────────────────────────────────────────────
+async function searchLog() {
+  const pattern = document.getElementById('log-search').value.trim();
+  if (!pattern) { toast('请输入搜索内容', 'warning'); return; }
+  const r = await api('/api/runtime/' + CID + '/log/search', { method:'POST', body: JSON.stringify({ pattern }) });
+  document.getElementById('log-search-result').textContent = r.result || '无结果';
+  switchTab('search');
+}
+
+// ── Stream (tail -f mode) ──────────────────────────────────
 function startStream() {
+  if (streamActive) return;
   streamActive = true;
+  streamLineCount = 0;
   const el = document.getElementById('log-stream');
+
+  // First load recent lines, then connect SSE
+  loadRecentThenStream();
+}
+
+async function loadRecentThenStream() {
+  const el = document.getElementById('log-stream');
+  el.textContent = '加载中...';
+
+  // Load last 100 lines first
+  try {
+    const r = await api('/api/runtime/' + CID + '/log/tail?lines=100');
+    if (r.log) {
+      el.textContent = r.log;
+      streamLineCount = r.log.split('\n').length;
+    }
+  } catch(e) {
+    el.textContent = '';
+  }
+  updateStreamStats();
+
+  // Now connect SSE for new lines
   const evt = new EventSource('/api/runtime/' + CID + '/log/stream');
   evt.onmessage = (e) => {
-    el.textContent += e.data;
-    scrollToBottom('log-stream');
+    if (!streamActive) return;
+    const lines = e.data.split('\n').filter(l => l);
+    lines.forEach(line => {
+      const div = document.createElement('div');
+      div.className = 'new-line';
+      div.textContent = line;
+      el.appendChild(div);
+      streamLineCount++;
+      // Remove highlight after 1s
+      setTimeout(() => div.classList.remove('new-line'), 1000);
+    });
+    updateStreamStats();
+
+    // Auto-scroll if in follow mode or user hasn't scrolled up
+    if (followMode || !userScrolledUp) {
+      el.scrollTop = el.scrollHeight;
+    }
   };
-  evt.onerror = () => { evt.close(); streamActive = false; };
+  evt.onerror = () => {
+    evt.close();
+    streamActive = false;
+    const el2 = document.getElementById('log-stream');
+    const div = document.createElement('div');
+    div.style.color = '#ff4d4f';
+    div.textContent = '\n[连接断开，点击"重连"恢复]';
+    el2.appendChild(div);
+  };
   window._sse = evt;
 }
 
 function stopStream() {
   streamActive = false;
-  if (window._sse) { window._sse.close(); }
+  if (window._sse) { window._sse.close(); window._sse = null; }
 }
 
-function scrollToBottom(id) {
-  const el = document.getElementById(id);
-  el.scrollTop = el.scrollHeight;
+function restartStream() {
+  stopStream();
+  document.getElementById('log-stream').textContent = '';
+  streamLineCount = 0;
+  startStream();
 }
 
+function clearStream() {
+  const el = document.getElementById('log-stream');
+  el.textContent = '';
+  streamLineCount = 0;
+  updateStreamStats();
+}
+
+function toggleFollow() {
+  followMode = !followMode;
+  userScrolledUp = false;
+  const btn = document.getElementById('follow-btn');
+  const icon = document.getElementById('follow-icon');
+  const text = document.getElementById('follow-text');
+  if (followMode) {
+    btn.className = 'follow-btn btn btn-sm active';
+    icon.textContent = '⬇';
+    text.textContent = '自动跟随';
+    // Scroll to bottom immediately
+    document.getElementById('log-stream').scrollTop = document.getElementById('log-stream').scrollHeight;
+  } else {
+    btn.className = 'follow-btn btn btn-sm inactive';
+    icon.textContent = '⏸';
+    text.textContent = '已暂停';
+  }
+}
+
+function updateStreamStats() {
+  document.getElementById('stream-stats').textContent = streamLineCount + ' 行' + (streamActive ? ' | 连接中' : ' | 已断开');
+}
+
+// Detect user scroll up (disable auto-scroll temporarily)
+document.addEventListener('DOMContentLoaded', () => {
+  const el = document.getElementById('log-stream');
+  el.addEventListener('scroll', () => {
+    const atBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 50;
+    if (!atBottom && followMode) {
+      userScrolledUp = true;
+    } else if (atBottom) {
+      userScrolledUp = false;
+    }
+  });
+});
+
+// Load tail on page load
 loadTail();
   </script>
 </body>
