@@ -153,7 +153,7 @@ def update_config(cid: int, body: ConfigCreate):
 
 @router.delete("/{cid}")
 def delete_config(cid: int):
-    from app.services import stop_config, _stop_gpu_collector
+    from app.services import stop_config
     db = SessionLocal()
     try:
         c = db.query(Config).filter(Config.id == cid).first()
@@ -162,7 +162,9 @@ def delete_config(cid: int):
         # Stop if running
         if c.pid:
             stop_config(cid)
-        _stop_gpu_collector(cid)
+        # Delete associated GPU metrics
+        from app.database import GpuMetric
+        db.query(GpuMetric).filter(GpuMetric.config_id == cid).delete()
         db.delete(c)
         db.commit()
         return {"ok": True}
