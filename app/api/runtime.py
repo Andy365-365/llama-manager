@@ -13,7 +13,8 @@ from app.services import (
     scan_models, _start_gpu_collector, _stop_gpu_collector,
     _log_file_path,
 )
-from app.database import SessionLocal, Config
+from app.database import SessionLocal, Config, GpuMetric
+from datetime import datetime, timedelta
 
 router = APIRouter(prefix="/api/runtime", tags=["runtime"])
 
@@ -117,6 +118,34 @@ def api_search_log(cid: int, pattern: str):
 
 
 # ── GPU Metrics ─────────────────────────────────────────────────
+
+@router.get("/gpu/history")
+def api_gpu_history(minutes: int = 30, gpu_index: Optional[int] = None):
+    """Get GPU history metrics (global, not tied to a config)."""
+    db = SessionLocal()
+    try:
+        since = datetime.now() - timedelta(minutes=minutes)
+        q = db.query(GpuMetric).filter(GpuMetric.timestamp >= since)
+        if gpu_index is not None:
+            q = q.filter(GpuMetric.gpu_index == gpu_index)
+        q = q.order_by(GpuMetric.timestamp)
+        metrics = q.all()
+        return [
+            {
+                "timestamp": m.timestamp.isoformat(),
+                "gpu_index": m.gpu_index,
+                "utilization_gpu": m.utilization_gpu,
+                "utilization_memory": m.utilization_memory,
+                "memory_used": m.memory_used,
+                "memory_total": m.memory_total,
+                "temperature": m.temperature,
+                "power_usage": m.power_usage,
+            }
+            for m in metrics
+        ]
+    finally:
+        db.close()
+
 
 @router.get("/gpu/metrics/{cid}")
 def api_gpu_metrics(cid: int, minutes: int = 30, gpu_index: Optional[int] = None):
