@@ -10,7 +10,7 @@ import aiofiles
 
 from .database import init_db
 import asyncio
-from .services import _master_gpu_collector
+from .services import _start_global_gpu_collector, _stop_global_gpu_collector
 from .api.workspaces import router as ws_router
 from .api.instances import router as inst_router
 from .api.configs import router as cfg_router
@@ -22,15 +22,10 @@ BASE_DIR = os.path.dirname(os.path.dirname(__file__))
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     init_db()
-    # Start background GPU collector
-    from .services import _gpu_collector_task
-    task = asyncio.create_task(_master_gpu_collector())
+    # Start global GPU collector (independent of any config)
+    await _start_global_gpu_collector()
     yield
-    task.cancel()
-    try:
-        await task
-    except asyncio.CancelledError:
-        pass
+    await _stop_global_gpu_collector()
 
 app = FastAPI(title="Llama.cpp Manager", lifespan=lifespan)
 app.mount("/static", StaticFiles(directory=os.path.join(BASE_DIR, "static")), name="static")

@@ -16,9 +16,80 @@ from .database import SessionLocal, Config, GpuMetric, LlamaInstance
 LOGS_DIR = os.path.join(os.path.dirname(os.path.dirname(__file__)), "logs")
 os.makedirs(LOGS_DIR, exist_ok=True)
 
-# Active GPU collectors: set of config_ids to monitor
-_active_collectors: set[int] = set()
+# ── GPU Monitoring (Global) ────────────────────────────────────
+# Global GPU collector runs independently of any config.
+
 _gpu_collector_task: Optional[asyncio.Task] = None
+_GPU_COLLECT_INTERVAL = 5.0  # seconds
+
+
+async def _start_global_gpu_collector():
+    """Start global GPU metrics collection (runs until cancelled)."""
+    global _gpu_collector_task
+    _gpu_collector_task = asyncio.current_task()
+    while True:
+        try:
+            await asyncio.to_thread(_collect_gpu_snapshot_global)
+        except Exception:
+            pass
+        await asyncio.sleep(_GPU_COLLECT_INTERVAL)
+
+
+async def _stop_global_gpu_collector():
+    """Stop global GPU collector."""
+    global _gpu_collector_task
+    if _gpu_collector_task:
+        _gpu_collector_task.cancel()
+        try:
+            await _gpu_collector_task
+        except asyncio.CancelledError:
+            pass
+        _gpu_collector_task = None
+
+
+def _collect_gpu_snapshot_global():
+    """Run nvidia-smi and save metrics (config_id = None for global)."""
+    try:
+        result = subprocess.run(
+            [
+                "nvidia-smi",
+                "--query-gpu=index,utilization.gpu,utilization.memory,memory.used,memory.total,"
+                "temperature.gpu,power.draw,power.limit,fan.speed",
+                "--format=csv,noheader,nounits",
+            ],
+            capture_output=True, text=True, timeout=10
+        )
+        if result.returncode != 0:
+            return
+
+        db = SessionLocal()
+        try:
+            reader = csv.reader(io.StringIO(result.stdout.strip()))
+            for row in reader:
+                if len(row) < 9:
+                    continue
+                try:
+                    m = GpuMetric(
+                        config_id=None,  # global, not tied to any config
+                        gpu_index=int(row[0]),
+                        timestamp=datetime.now(),
+                        utilization_gpu=float(row[1]),
+                        utilization_memory=float(row[2]),
+                        memory_used=float(row[3]),
+                        memory_total=float(row[4]),
+                        temperature=float(row[5]),
+                        power_usage=float(row[6]),
+                        power_limit=float(row[7]),
+                        fan_speed=float(row[8]),
+                    )
+                    db.add(m)
+                except (ValueError, IndexError):
+                    continue
+            db.commit()
+        finally:
+            db.close()
+    except FileNotFoundError:
+        pass  # nvidia-smi not found
 
 
 # ── Process Management ──────────────────────────────────────────
@@ -133,9 +204,6 @@ def start_config(config_id: int) -> dict:
         config.started_at = datetime.now()
         db.commit()
 
-        # Start GPU collector
-        _start_gpu_collector(config_id)
-
         return {"ok": True, "pid": proc.pid, "log_file": log_path}
     finally:
         db.close()
@@ -169,9 +237,6 @@ def stop_config(config_id: int) -> dict:
         config.started_at = None
         db.commit()
 
-        # Stop GPU collector
-        _stop_gpu_collector(config_id)
-
         return {"ok": True}
     finally:
         db.close()
@@ -197,7 +262,6 @@ def update_status(config_id: int) -> dict:
             config.pid = None
             config.status = "stopped"
             config.started_at = None
-            _stop_gpu_collector(config_id)
             db.commit()
 
         return {"ok": True, "status": config.status, "pid": config.pid}
@@ -225,69 +289,6 @@ def _port_in_use(port: int) -> bool:
 
 
 # ── GPU Monitoring ──────────────────────────────────────────────
-
-async def _master_gpu_collector():
-    """Single background task that collects GPU metrics for all active configs."""
-    while True:
-        for cid in list(_active_collectors):
-            try:
-                _collect_gpu_snapshot(cid)
-            except Exception:
-                pass
-        await asyncio.sleep(5.0)
-
-
-def _start_gpu_collector(config_id: int, interval: float = 5.0):
-    _active_collectors.add(config_id)
-
-
-def _stop_gpu_collector(config_id: int):
-    _active_collectors.discard(config_id)
-
-
-def _collect_gpu_snapshot(config_id: int):
-    """Run nvidia-smi and save metrics."""
-    try:
-        result = subprocess.run(
-            [
-                "nvidia-smi",
-                "--query-gpu=index,utilization.gpu,utilization.memory,memory.used,memory.total,"
-                "temperature.gpu,power.draw,power.limit,fan.speed",
-                "--format=csv,noheader,nounits",
-            ],
-            capture_output=True, text=True, timeout=10
-        )
-        if result.returncode != 0:
-            return
-
-        db = SessionLocal()
-        try:
-            reader = csv.reader(io.StringIO(result.stdout.strip()))
-            for row in reader:
-                if len(row) < 9:
-                    continue
-                try:
-                    m = GpuMetric(
-                        config_id=config_id,
-                        gpu_index=int(row[0]),
-                        timestamp=datetime.now(),
-                        utilization_gpu=float(row[1]),
-                        utilization_memory=float(row[2]),
-                        memory_used=float(row[3]),
-                        memory_total=float(row[4]),
-                        temperature=float(row[5]),
-                        power_usage=float(row[6]),
-                        power_limit=float(row[7]),
-                        fan_speed=float(row[8]),
-                    )
-                    db.add(m)
-                except (ValueError, IndexError):
-                    continue
-            db.commit()
-        finally:
-            db.close()
-    except FileNotFoundError:
-        pass  # nvidia-smi not found
 
 
 def get_gpu_metrics(config_id: int, minutes: int = 30, gpu_index: Optional[int] = None) -> list[dict]:

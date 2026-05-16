@@ -97,7 +97,7 @@ class GpuMetric(Base):
     """GPU metric snapshot."""
     __tablename__ = "gpu_metrics"
     id = Column(Integer, primary_key=True, autoincrement=True)
-    config_id = Column(Integer, ForeignKey("configs.id"), nullable=False)
+    config_id = Column(Integer, ForeignKey("configs.id"), nullable=True)
     gpu_index = Column(Integer, nullable=False, default=0)
     timestamp = Column(DateTime, nullable=False, default=datetime.now)
 
@@ -110,7 +110,7 @@ class GpuMetric(Base):
     power_limit = Column(Float, nullable=True)        # Watts
     fan_speed = Column(Float, nullable=True)          # percent
 
-    config = relationship("Config", back_populates="gpu_metrics")
+    config = relationship("Config", back_populates="gpu_metrics", foreign_keys=[config_id])
 
 
 def init_db():

@@ -10,7 +10,7 @@ import time
 from app.services import (
     start_config, stop_config, restart_config, update_status,
     tail_log, search_log, get_gpu_metrics, get_gpu_count, get_gpu_info,
-    scan_models, _start_gpu_collector, _stop_gpu_collector,
+    scan_models, _collect_gpu_snapshot_global,
     _log_file_path,
 )
 from app.database import SessionLocal, Config, GpuMetric
@@ -59,7 +59,6 @@ def api_all_status():
                     c.pid = None
                     c.status = "stopped"
                     c.started_at = None
-                    _stop_gpu_collector(c.id)
                     db.commit()
                 else:
                     c.status = "running"
@@ -159,17 +158,9 @@ def api_gpu_info():
 
 @router.post("/gpu/snapshot")
 def api_gpu_snapshot():
-    """Force a one-time GPU snapshot."""
-    from app.services import _collect_gpu_snapshot
-    # Collect for all running configs
-    db = SessionLocal()
-    try:
-        running = db.query(Config).filter(Config.pid.isnot(None)).all()
-        for c in running:
-            _collect_gpu_snapshot(c.id)
-        return {"ok": True, "collected": len(running)}
-    finally:
-        db.close()
+    """Force a one-time GPU snapshot (global)."""
+    _collect_gpu_snapshot_global()
+    return {"ok": True}
 
 
 # ── Model scanning ──────────────────────────────────────────────
